@@ -54,9 +54,24 @@ create policy "Users can view their own profile or partner's profile"
     on public.profiles for select
     using (id = auth.uid() or couple_id = public.get_user_couple_id());
 
-create policy "Users can update their own profile or partner link"
+create policy "Users can insert their own profile"
+    on public.profiles for insert
+    with check (id = auth.uid());
+
+create policy "Users can update their own profile"
     on public.profiles for update
-    using (id = auth.uid() or couple_id is null);
+    using (id = auth.uid())
+    with check (id = auth.uid());
+
+create policy "Users can link their partner profile"
+    on public.profiles for update
+    using (couple_id is null)
+    with check (couple_id = public.get_user_couple_id());
+
+create policy "Users can disconnect their partner"
+    on public.profiles for update
+    using (couple_id = public.get_user_couple_id())
+    with check (couple_id is null);
 
 -- Trigger for new auth user to auto-insert profile
 create or replace function public.handle_new_user()

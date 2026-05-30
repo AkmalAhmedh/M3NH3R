@@ -6,9 +6,8 @@ import {
   Achievement, SafeSpace 
 } from '../types';
 
-const IS_SUPABASE_CONNECTED = 
-  process.env.NEXT_PUBLIC_SUPABASE_URL && 
-  process.env.NEXT_PUBLIC_SUPABASE_URL !== 'https://placeholder-url-for-build.supabase.co';
+const effectiveSupabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const IS_SUPABASE_CONNECTED = !!effectiveSupabaseUrl && effectiveSupabaseUrl !== 'https://placeholder-url-for-build.supabase.co';
 
 // Helper for local storage mock DB
 class LocalDB {
@@ -125,6 +124,42 @@ export const db = {
   isSupabase: () => !!IS_SUPABASE_CONNECTED,
 
   // --- Profile / Auth Helpers ---
+  createProfile: async (userId: string, email: string, username?: string): Promise<Profile> => {
+    if (IS_SUPABASE_CONNECTED) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          email,
+          username: username || email.split('@')[0],
+          mood: 'Neutral',
+          mood_emoji: '🌙',
+          last_active_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } else {
+      const profile: Profile = {
+        id: userId,
+        email,
+        username: username || email.split('@')[0],
+        couple_id: null,
+        avatar_url: null,
+        mood: 'Neutral',
+        mood_emoji: '🌙',
+        last_active_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      LocalDB.insert<Profile>('profiles', profile);
+      return profile;
+    }
+  },
+
   getCurrentProfile: async (userId: string): Promise<Profile | null> => {
     if (IS_SUPABASE_CONNECTED) {
       const { data, error } = await supabase
@@ -273,20 +308,25 @@ export const db = {
       if (coupleErr || !coupleData) throw coupleErr || new Error('Failed to create couple.');
 
       // 3. Update profiles for both partners
-      await supabase.from('profiles').update({ couple_id: coupleData.id }).eq('id', myId);
-      await supabase.from('profiles').update({ couple_id: coupleData.id }).eq('id', codeData.issuer_id);
+      const { error: myProfileErr } = await supabase.from('profiles').update({ couple_id: coupleData.id }).eq('id', myId);
+      if (myProfileErr) throw new Error(`Failed to update your profile: ${myProfileErr.message}`);
+
+      const { error: partnerProfileErr } = await supabase.from('profiles').update({ couple_id: coupleData.id }).eq('id', codeData.issuer_id);
+      if (partnerProfileErr) throw new Error(`Failed to update partner profile: ${partnerProfileErr.message}`);
 
       // 4. Mark code as used
-      await supabase.from('invite_codes').update({ is_used: true }).eq('id', codeData.id);
+      const { error: codeUseErr } = await supabase.from('invite_codes').update({ is_used: true }).eq('id', codeData.id);
+      if (codeUseErr) throw new Error(`Failed to mark code as used: ${codeUseErr.message}`);
 
       // 5. Send Notification
-      await supabase.from('notifications').insert({
+      const { error: notifErr } = await supabase.from('notifications').insert({
         couple_id: coupleData.id,
         recipient_id: codeData.issuer_id,
         sender_id: myId,
         type: 'link',
         message: 'Partner connected! Your universe has been established.'
       });
+      if (notifErr) throw new Error(`Failed to send setup notification: ${notifErr.message}`);
 
       return coupleData;
     } else {
@@ -401,17 +441,19 @@ export const db = {
   respondToBreakup: async (requestId: string, accept: boolean, coupleId: string): Promise<void> => {
     const status = accept ? 'accepted' : 'declined';
     if (IS_SUPABASE_CONNECTED) {
-      await supabase
+      const { error: requestErr } = await supabase
         .from('breakup_requests')
         .update({ status })
         .eq('id', requestId);
+      if (requestErr) throw requestErr;
 
       if (accept) {
         // Mutual consent reached! Reset couple_id for both profiles to null
-        await supabase
+        const { error: profileErr } = await supabase
           .from('profiles')
           .update({ couple_id: null, mood: null, mood_emoji: null })
           .eq('couple_id', coupleId);
+        if (profileErr) throw profileErr;
       }
     } else {
       const reqs = LocalDB.get<BreakupRequest>('breakup_requests');

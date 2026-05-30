@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Server-side supabase client for indexing context
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Server-side Supabase config: prefer server env vars (Netlify)
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const openRouterKey = process.env.OPENROUTER_API_KEY;
 
 export async function POST(request: Request) {
@@ -17,10 +17,13 @@ export async function POST(request: Request) {
     // 1. Gather context from DB
     let contextStr = '';
     
-    const isSupabaseReady = supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://placeholder-url-for-build.supabase.co';
+    const isSupabaseReady = supabaseUrl && supabaseKey && supabaseUrl !== 'https://placeholder-url-for-build.supabase.co';
 
     if (isSupabaseReady) {
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      // Use a server-side Supabase key (service role preferred) when running on Netlify functions.
+      const supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: { persistSession: false, detectSessionInUrl: false }
+      });
       
       // Fetch memories
       const { data: memories } = await supabase.from('memories').select('title, category, date, content').eq('couple_id', coupleId);

@@ -27,9 +27,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loading, setLoading] = useState(true);
   const [isDemo, setIsDemo] = useState(true);
 
-  const fetchProfileAndCouple = async (userId: string) => {
+  const fetchProfileAndCouple = async (userId: string, userEmail?: string) => {
     try {
-      const myProfile = await db.getCurrentProfile(userId);
+      let myProfile = await db.getCurrentProfile(userId);
+      
+      // If no profile exists and user email is provided, create one
+      if (!myProfile && userEmail) {
+        try {
+          myProfile = await db.createProfile(userId, userEmail);
+        } catch (createErr) {
+          console.error('Error creating profile:', createErr);
+        }
+      }
+      
       if (myProfile) {
         setProfile(myProfile);
         if (myProfile.couple_id) {
@@ -93,7 +103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session) {
           setUser(session.user);
-          fetchProfileAndCouple(session.user.id).then(() => setLoading(false));
+          fetchProfileAndCouple(session.user.id, session.user.email).then(() => setLoading(false));
         } else {
           setUser(null);
           setLoading(false);
@@ -103,7 +113,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         if (session) {
           setUser(session.user);
-          await fetchProfileAndCouple(session.user.id);
+          await fetchProfileAndCouple(session.user.id, session.user.email);
         } else {
           setUser(null);
           setProfile(null);
