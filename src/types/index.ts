@@ -1,6 +1,7 @@
 export interface Profile {
   id: string;
   couple_id: string | null;
+  pending_partner_id: string | null;
   email: string;
   username: string;
   avatar_url: string | null;

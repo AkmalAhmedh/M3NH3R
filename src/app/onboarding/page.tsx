@@ -19,6 +19,8 @@ export default function OnboardingPage() {
   const [genLoading, setGenLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successLinked, setSuccessLinked] = useState(false);
+  const [pendingPartnerName, setPendingPartnerName] = useState<string | null>(null);
+  const [canceling, setCanceling] = useState(false);
 
   // Redirect to login if unauthenticated, or to dashboard if already linked
   useEffect(() => {
@@ -31,14 +33,35 @@ export default function OnboardingPage() {
     }
   }, [user, profile, loading, router]);
 
-  // Retrieve active generated code if exists
+  // Retrieve or auto-generate active invite code on load
   useEffect(() => {
     if (profile?.id) {
-      db.getInviteCode(profile.id).then((code) => {
-        if (code) setGeneratedCode(code);
+      db.getInviteCode(profile.id).then(async (code) => {
+        if (code) {
+          setGeneratedCode(code);
+        } else {
+          try {
+            const newCode = await db.generateInviteCode(profile.id);
+            setGeneratedCode(newCode);
+          } catch (err) {
+            console.error('Failed to auto-generate code:', err);
+          }
+        }
       });
     }
   }, [profile?.id]);
+
+  // Load pending partner username if pending link exists
+  useEffect(() => {
+    if (profile?.pending_partner_id) {
+      db.getCurrentProfile(profile.pending_partner_id).then((p) => {
+        if (p) setPendingPartnerName(p.username || p.email.split('@')[0]);
+      });
+    } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPendingPartnerName(null);
+    }
+  }, [profile?.pending_partner_id]);
 
   const handleGenerateCode = async () => {
     if (!profile?.id) return;
@@ -67,27 +90,45 @@ export default function OnboardingPage() {
     setLinkingLoading(true);
     setErrorMsg('');
     try {
-      await db.linkPartner(profile.id, inviteCode.trim().toUpperCase());
+      const res = await db.linkPartner(profile.id, inviteCode.trim().toUpperCase());
       
-      // Connection Confetti Trigger!
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
-      });
-
-      setSuccessLinked(true);
+      if (res.linked) {
+        // Connection Confetti Trigger!
+        confetti({
+          particleCount: 150,
+          spread: 80,
+          origin: { y: 0.6 },
+          colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
+        });
+        setSuccessLinked(true);
+      }
+      
       await refreshState();
-      
-      // Delay redirect to let them enjoy the success state
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 3000);
+
+      if (res.linked) {
+        // Delay redirect to let them enjoy the success state
+        setTimeout(() => {
+          router.push('/dashboard');
+        }, 3000);
+      }
     } catch (err: unknown) {
       setErrorMsg((err as Error).message || 'Failed to link partner. Verify the code.');
     } finally {
       setLinkingLoading(false);
+    }
+  };
+
+  const handleCancelRequest = async () => {
+    if (!profile?.id) return;
+    setCanceling(true);
+    setErrorMsg('');
+    try {
+      await db.cancelPendingLink(profile.id);
+      await refreshState();
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || 'Failed to cancel request.');
+    } finally {
+      setCanceling(false);
     }
   };
 
@@ -130,6 +171,95 @@ export default function OnboardingPage() {
             </div>
           )}
         </AnimatePresence>
+      </div>
+    );
+  }
+
+  if (profile?.pending_partner_id) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-between p-6 md:p-12 relative overflow-hidden">
+        {/* Background gradients */}
+        <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-brand-violet/10 rounded-full filter blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-brand-fuchsia/10 rounded-full filter blur-3xl pointer-events-none" />
+
+        {/* Top Header */}
+        <div className="flex justify-between items-center z-10 w-full">
+          <div className="flex items-center gap-2">
+            <Compass className="w-6 h-6 text-brand-cyan" />
+            <span className="text-sm font-semibold tracking-wider bg-gradient-to-r from-brand-cyan to-brand-violet bg-clip-text text-transparent">
+              ORBITAL SYNC GATEWAY
+            </span>
+          </div>
+          <button
+            onClick={() => logOut()}
+            className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1.5 glass px-3 py-1.5 rounded-full transition duration-300 cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" /> Disconnect
+          </button>
+        </div>
+
+        {/* Pending Sync Card */}
+        <div className="flex-1 flex flex-col justify-center items-center z-10 my-8 animate-fadeIn">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="glass p-8 md:p-10 rounded-3xl border border-white/10 shadow-2xl max-w-md w-full text-center relative overflow-hidden"
+          >
+            <div className="absolute -top-16 -right-16 w-32 h-32 bg-brand-cyan/10 rounded-full blur-2xl" />
+            <div className="absolute -bottom-16 -left-16 w-32 h-32 bg-brand-violet/10 rounded-full blur-2xl" />
+
+            {/* Spinning orbital animation */}
+            <div className="relative w-28 h-28 mx-auto mb-6 flex items-center justify-center">
+              <div className="absolute inset-0 border border-brand-cyan/20 rounded-full" />
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+                className="absolute inset-0 border-t-2 border-brand-cyan rounded-full"
+              />
+              <div className="absolute w-20 h-20 border border-brand-violet/20 rounded-full" />
+              <motion.div 
+                animate={{ rotate: -360 }}
+                transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                className="absolute w-20 h-20 border-b-2 border-brand-violet rounded-full"
+              />
+              <Heart className="w-8 h-8 text-brand-fuchsia fill-brand-fuchsia/40 animate-pulse relative z-10" />
+            </div>
+
+            <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-brand-cyan to-brand-fuchsia bg-clip-text text-transparent">
+              Waiting for Partner Sync
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed mb-6">
+              You requested connection with <span className="text-brand-cyan font-semibold">@{pendingPartnerName || 'your partner'}</span>.
+              To complete the link, they must log in and enter your Space Code below:
+            </p>
+
+            {/* Display my code for partner to use */}
+            <div className="mb-6 p-4 bg-slate-900/50 border border-white/5 rounded-xl">
+              <span className="block text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">Your Space Code</span>
+              <span className="text-2xl font-black text-brand-violet tracking-widest font-mono">
+                {generatedCode || 'Loading...'}
+              </span>
+            </div>
+
+            {errorMsg && (
+              <div className="text-xs text-rose-400 mb-4">
+                {errorMsg}
+              </div>
+            )}
+
+            <button
+              onClick={handleCancelRequest}
+              disabled={canceling}
+              className="w-full py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs font-semibold hover:bg-rose-500/20 transition cursor-pointer disabled:opacity-50"
+            >
+              {canceling ? 'Canceling...' : 'Cancel Sync Request'}
+            </button>
+          </motion.div>
+        </div>
+
+        <div className="text-center text-xs text-slate-500 z-10">
+          Once both devices have connected, you will be redirected to your galaxy dashboard automatically.
+        </div>
       </div>
     );
   }

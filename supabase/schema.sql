@@ -17,6 +17,7 @@ alter table public.couples enable row level security;
 create table public.profiles (
     id uuid primary key references auth.users on delete cascade,
     couple_id uuid references public.couples(id) on delete set null,
+    pending_partner_id uuid references public.profiles(id) on delete set null,
     email text,
     username text,
     avatar_url text,
@@ -524,6 +525,91 @@ alter table public.safe_space enable row level security;
 create policy "Couple access safe space"
     on public.safe_space for all
     using (couple_id = public.get_user_couple_id());
+
+
+-- Mutual connection trigger logic
+create or replace function public.link_partner_mutual(invite_code text)
+returns jsonb
+security definer
+set search_path = public
+as $$
+declare
+  my_id uuid;
+  partner_code_data record;
+  partner_id uuid;
+  couple_uuid uuid;
+  is_mutual boolean;
+  ret jsonb;
+begin
+  my_id := auth.uid();
+  if my_id is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  -- 1. Find the invite code to get the partner's user ID
+  select * into partner_code_data from public.invite_codes
+  where code = invite_code and is_used = false;
+  
+  if not found then
+    raise exception 'Invalid or expired invite code';
+  end if;
+
+  partner_id := partner_code_data.issuer_id;
+  if partner_id = my_id then
+    raise exception 'You cannot link with your own code';
+  end if;
+
+  -- 2. Update my profile's pending_partner_id to partner_id
+  update public.profiles
+  set pending_partner_id = partner_id
+  where id = my_id;
+
+  -- 3. Check if partner's pending_partner_id is set to my_id (mutual link check)
+  select exists (
+    select 1 from public.profiles
+    where id = partner_id and pending_partner_id = my_id
+  ) into is_mutual;
+
+  if is_mutual then
+    -- Create new couple
+    insert into public.couples (name, anniversary_date)
+    values ('Our Shared Universe', current_date)
+    returning id into couple_uuid;
+
+    -- Update both profiles: set couple_id and clear pending_partner_id
+    update public.profiles
+    set couple_id = couple_uuid, pending_partner_id = null
+    where id in (my_id, partner_id);
+
+    -- Mark BOTH invite codes as used
+    update public.invite_codes
+    set is_used = true
+    where issuer_id in (my_id, partner_id);
+
+    -- Insert connection notification
+    insert into public.notifications (couple_id, recipient_id, sender_id, type, message)
+    values (
+      couple_uuid,
+      partner_id,
+      my_id,
+      'link',
+      'Partner connected! Your universe has been established.'
+    );
+
+    ret := jsonb_build_object(
+      'linked', true,
+      'couple_id', couple_uuid
+    );
+  else
+    ret := jsonb_build_object(
+      'linked', false,
+      'couple_id', null
+    );
+  end if;
+
+  return ret;
+end;
+$$ language plpgsql;
 
 
 -- Triggers to update updated_at columns

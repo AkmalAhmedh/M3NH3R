@@ -103,61 +103,25 @@ export const db = {
     return data.code;
   },
 
-  linkPartner: async (myId: string, inviteCode: string): Promise<Couple> => {
-    // 1. Verify code
-    const { data: codeData, error: codeErr } = await supabase
-      .from('invite_codes')
-      .select('*')
-      .eq('code', inviteCode)
-      .eq('is_used', false)
-      .single();
-    
-    if (codeErr || !codeData) throw new Error('Invalid or expired code.');
-    if (codeData.issuer_id === myId) throw new Error('You cannot link with your own code.');
+  linkPartner: async (myId: string, inviteCode: string): Promise<{ linked: boolean; couple: Couple | null }> => {
+    const { data, error } = await supabase
+      .rpc('link_partner_mutual', { invite_code: inviteCode });
+    if (error) throw error;
 
-    // 2. Create Couple
-    const { data: coupleData, error: coupleErr } = await supabase
-      .from('couples')
-      .insert({ name: 'Our Shared Universe', anniversary_date: new Date().toISOString().split('T')[0] })
-      .select()
-      .single();
-    
-    if (coupleErr || !coupleData) throw coupleErr || new Error('Failed to create couple.');
-
-    // 3. Update profiles for both partners
-    const { data: myProfileData, error: myProfileErr } = await supabase
-      .from('profiles')
-      .update({ couple_id: coupleData.id })
-      .eq('id', myId)
-      .select();
-    if (myProfileErr || !myProfileData || myProfileData.length === 0) {
-      throw new Error(`Failed to update your profile (RLS violation or user not found): ${myProfileErr?.message || 'No rows updated'}`);
+    const res = data as { linked: boolean; couple_id: string | null };
+    if (res.linked && res.couple_id) {
+      const couple = await db.getCouple(res.couple_id);
+      return { linked: true, couple };
     }
+    return { linked: false, couple: null };
+  },
 
-    const { data: partnerProfileData, error: partnerProfileErr } = await supabase
+  cancelPendingLink: async (myId: string): Promise<void> => {
+    const { error } = await supabase
       .from('profiles')
-      .update({ couple_id: coupleData.id })
-      .eq('id', codeData.issuer_id)
-      .select();
-    if (partnerProfileErr || !partnerProfileData || partnerProfileData.length === 0) {
-      throw new Error(`Failed to update partner profile (RLS violation or partner not found): ${partnerProfileErr?.message || 'No rows updated'}`);
-    }
-
-    // 4. Mark code as used
-    const { error: codeUseErr } = await supabase.from('invite_codes').update({ is_used: true }).eq('id', codeData.id);
-    if (codeUseErr) throw new Error(`Failed to mark code as used: ${codeUseErr.message}`);
-
-    // 5. Send Notification
-    const { error: notifErr } = await supabase.from('notifications').insert({
-      couple_id: coupleData.id,
-      recipient_id: codeData.issuer_id,
-      sender_id: myId,
-      type: 'link',
-      message: 'Partner connected! Your universe has been established.'
-    });
-    if (notifErr) throw new Error(`Failed to send setup notification: ${notifErr.message}`);
-
-    return coupleData;
+      .update({ pending_partner_id: null })
+      .eq('id', myId);
+    if (error) throw error;
   },
 
   getCouple: async (coupleId: string): Promise<Couple | null> => {
