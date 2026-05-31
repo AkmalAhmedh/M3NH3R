@@ -142,8 +142,10 @@ const InteractiveStar: React.FC<InteractiveStarProps> = ({ memoryStar, onSelect,
 
   useFrame((state) => {
     if (meshRef.current) {
-      // Slow pulse animation
-      const scale = 1 + Math.sin(state.clock.getElapsedTime() * 3 + parseFloat(memoryStar.memory.id.substring(0, 3) || '0')) * 0.15;
+      // Slow pulse animation with a safe offset derived from UUID characters
+      const idOffset = Array.from(memoryStar.memory.id.substring(0, 5))
+        .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const scale = 1 + Math.sin(state.clock.getElapsedTime() * 3 + idOffset) * 0.15;
       meshRef.current.scale.set(scale, scale, scale);
       
       // Face camera

@@ -184,7 +184,7 @@ export default function JournalPage() {
     if (!profile?.couple_id) return;
     setFormLoading(true);
     const ss = gScreenshot || 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?q=80&w=600';
-    await db.addGame(profile.couple_id, gTitle, parseFloat(gHours), ss, gNotes, gDate);
+    await db.addGame(profile.couple_id, gTitle, parseFloat(gHours) || 0, ss, gNotes, gDate);
     setGTitle('');
     setGHours('1');
     setGScreenshot('');
