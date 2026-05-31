@@ -125,11 +125,23 @@ export const db = {
     if (coupleErr || !coupleData) throw coupleErr || new Error('Failed to create couple.');
 
     // 3. Update profiles for both partners
-    const { error: myProfileErr } = await supabase.from('profiles').update({ couple_id: coupleData.id }).eq('id', myId);
-    if (myProfileErr) throw new Error(`Failed to update your profile: ${myProfileErr.message}`);
+    const { data: myProfileData, error: myProfileErr } = await supabase
+      .from('profiles')
+      .update({ couple_id: coupleData.id })
+      .eq('id', myId)
+      .select();
+    if (myProfileErr || !myProfileData || myProfileData.length === 0) {
+      throw new Error(`Failed to update your profile (RLS violation or user not found): ${myProfileErr?.message || 'No rows updated'}`);
+    }
 
-    const { error: partnerProfileErr } = await supabase.from('profiles').update({ couple_id: coupleData.id }).eq('id', codeData.issuer_id);
-    if (partnerProfileErr) throw new Error(`Failed to update partner profile: ${partnerProfileErr.message}`);
+    const { data: partnerProfileData, error: partnerProfileErr } = await supabase
+      .from('profiles')
+      .update({ couple_id: coupleData.id })
+      .eq('id', codeData.issuer_id)
+      .select();
+    if (partnerProfileErr || !partnerProfileData || partnerProfileData.length === 0) {
+      throw new Error(`Failed to update partner profile (RLS violation or partner not found): ${partnerProfileErr?.message || 'No rows updated'}`);
+    }
 
     // 4. Mark code as used
     const { error: codeUseErr } = await supabase.from('invite_codes').update({ is_used: true }).eq('id', codeData.id);
@@ -201,11 +213,15 @@ export const db = {
 
     if (accept) {
       // Mutual consent reached! Reset couple_id for both profiles to null
-      const { error: profileErr } = await supabase
+      const { data: updatedProfiles, error: profileErr } = await supabase
         .from('profiles')
         .update({ couple_id: null, mood: null, mood_emoji: null })
-        .eq('couple_id', coupleId);
-      if (profileErr) throw profileErr;
+        .eq('couple_id', coupleId)
+        .select();
+      
+      if (profileErr || !updatedProfiles || updatedProfiles.length < 2) {
+        throw new Error(`Failed to disconnect profiles (updated ${updatedProfiles?.length || 0} of 2 rows): ${profileErr?.message || 'RLS check failed'}`);
+      }
     }
   },
 

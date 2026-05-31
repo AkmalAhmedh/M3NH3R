@@ -59,13 +59,9 @@ create policy "Users can insert couples"
     with check (auth.role() = 'authenticated');
 
 -- RLS Policies for Profiles
-create policy "Users can view their own profile"
+create policy "Users can view profiles"
     on public.profiles for select
-    using (id = auth.uid());
-
-create policy "Users can view their partner profile"
-    on public.profiles for select
-    using (couple_id = public.get_user_couple_id());
+    using (auth.role() = 'authenticated');
 
 create policy "Users can insert their own profile"
     on public.profiles for insert
