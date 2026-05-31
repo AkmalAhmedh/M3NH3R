@@ -4,8 +4,8 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Palette, Edit2, Eraser, RefreshCw, Pin, Image as ImageIcon, 
-  MousePointer, Sparkles, AlertCircle, Save, X 
+  Edit2, Eraser, RefreshCw, Pin, Image as ImageIcon, 
+  MousePointer, Sparkles, X 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';

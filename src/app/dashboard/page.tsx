@@ -4,15 +4,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Heart, Calendar, Smile, Compass, Edit3, Film, Gamepad2, 
-  MapPin, Sparkles, Bell, Trophy, BookOpen 
+  Heart, Smile, Compass, Edit3, 
+  Sparkles, Bell, Trophy, BookOpen 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import Navbar from '@/components/ui/Navbar';
-import { Memory, Drawing, Movie, Game, LocationLog, AppNotification, Achievement } from '@/types';
+import { Memory, Drawing, Movie, AppNotification, Achievement } from '@/types';
 
 // Mood Ring options
 const MOOD_OPTIONS = [
@@ -43,7 +43,6 @@ export default function DashboardPage() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [movies, setMovies] = useState<Movie[]>([]);
-  const [games, setGames] = useState<Game[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
 
@@ -73,8 +72,6 @@ export default function DashboardPage() {
       setDrawings(drws);
       const movs = await db.getMovies(profile.couple_id);
       setMovies(movs);
-      const gms = await db.getGames(profile.couple_id);
-      setGames(gms);
       const achs = await db.getAchievements(profile.couple_id);
       setAchievements(achs);
 
@@ -107,7 +104,7 @@ export default function DashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.couple_id, isDemo]);
+  }, [profile?.couple_id, isDemo, loadDashboardData]);
 
   // Calculate Days Together
   const getDaysTogether = () => {
@@ -391,6 +388,7 @@ export default function DashboardPage() {
               {drawings.find(d => d.is_pinned) ? (
                 <div className="text-center">
                   <div className="fridge-pin inline-block bg-white text-slate-950 p-2 scale-90 -rotate-3 transition hover:rotate-0 hover:scale-100 duration-300">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img 
                       src={drawings.find(d => d.is_pinned)?.thumbnail_url || ''} 
                       alt="Pinned Doodle" 

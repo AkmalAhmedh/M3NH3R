@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ShieldCheck, Lock, Unlock, Delete, AlertCircle, Plus, 
-  Eye, EyeOff, Save, Trash, Calendar, ArrowRight, ShieldAlert 
+  ShieldCheck, Lock, Unlock, Delete, Plus, 
+  Trash, Calendar, ShieldAlert 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
@@ -114,6 +114,7 @@ export default function SafeSpacePage() {
         setSuccessMsg('Vault pin established!');
         setTimeout(() => setSuccessMsg(''), 3000);
       } catch (err) {
+        console.error('Setup vault pin error:', err);
         setErrorMsg('Failed to initialize vault.');
       }
     }
@@ -133,6 +134,7 @@ export default function SafeSpacePage() {
         setPin('');
       }
     } catch (err) {
+      console.error('Unlock vault error:', err);
       setErrorMsg('Encryption service unavailable.');
     }
   }, [profile, pin, loadSecretNotes]);

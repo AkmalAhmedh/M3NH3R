@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Compass, Plus, X, Calendar, Image as ImageIcon, MapPin, Tag } from 'lucide-react';
+import { Compass, Plus, X, Calendar } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
 import Galaxy from '@/components/universe/Galaxy';
@@ -144,6 +144,7 @@ export default function GalaxyPage() {
 
               {selectedMemory.assets && selectedMemory.assets.length > 0 && (
                 <div className="rounded-xl overflow-hidden border border-white/10 shadow-lg bg-black/40">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={selectedMemory.assets[0].file_path}
                     alt={selectedMemory.title}

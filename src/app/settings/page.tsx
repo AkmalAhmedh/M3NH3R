@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   Settings, Heart, Calendar, ShieldAlert, AlertTriangle, EyeOff, Eye, 
-  Trash, Plus, LogOut, Lock, RefreshCw, Sparkles, Compass 
+  Trash, Plus, Lock, RefreshCw, Compass 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
@@ -22,7 +22,7 @@ const CATEGORIES = [
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, profile, partnerProfile, couple, loading, refreshState, logOut } = useApp();
+  const { user, profile, couple, loading, refreshState } = useApp();
 
   const [wants, setWants] = useState<Want[]>([]);
   const [newWant, setNewWant] = useState('');

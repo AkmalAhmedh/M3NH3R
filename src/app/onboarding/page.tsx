@@ -10,7 +10,7 @@ import confetti from 'canvas-confetti';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, profile, couple, loading, logOut, refreshState } = useApp();
+  const { user, profile, loading, logOut, refreshState } = useApp();
 
   const [inviteCode, setInviteCode] = useState('');
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);

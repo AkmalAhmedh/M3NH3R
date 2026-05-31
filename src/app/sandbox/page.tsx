@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Plus, X, Calendar, Image as ImageIcon, Sparkles, 
-  ChevronRight, ChevronLeft, ArrowRight, ArrowLeft, Star, Heart 
+  Plus, X, Sparkles, 
+  ArrowRight, ArrowLeft, Star, Heart 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
@@ -454,6 +454,7 @@ const SandboxCardWidget: React.FC<SandboxCardWidgetProps> = ({ card, onMove, onD
 
       {card.metadata.photoUrl && (
         <div className="rounded-lg overflow-hidden border border-white/5 max-h-24">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={card.metadata.photoUrl} alt={card.title} className="w-full object-cover h-20" />
         </div>
       )}

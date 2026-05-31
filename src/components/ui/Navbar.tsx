@@ -5,14 +5,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Home, Compass, Grid, Edit3, BookOpen, Settings, MessageSquare, 
-  Send, Sparkles, X, User, LogOut, ArrowRight, ShieldCheck 
+  Home, Compass, Grid, Edit3, BookOpen, Settings, 
+  Send, Sparkles, X, ShieldCheck 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { profile, partnerProfile, logOut } = useApp();
+  const { profile } = useApp();
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<{ sender: 'user' | 'ai'; text: string }[]>([
@@ -53,6 +53,7 @@ export default function Navbar() {
       const data = await response.json();
       setChatHistory(prev => [...prev, { sender: 'ai', text: data.answer || "I checked our stars, but couldn't find an answer. Try adding more memories!" }]);
     } catch (err) {
+      console.error('AI assistant error:', err);
       setChatHistory(prev => [...prev, { sender: 'ai', text: "Unable to reach the stars right now. Please check your internet connection." }]);
     } finally {
       setAiLoading(false);

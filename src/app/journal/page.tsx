@@ -4,13 +4,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  BookOpen, Mic, Square, Play, Pause, X, Plus, Calendar, 
-  Smile, Volume2, Film, Gamepad2, MapPin, Inbox, Clock, 
-  Lock, Unlock, Star, Trash2, Heart, Award 
+  Mic, Square, Play, Pause, X, Plus, Calendar, 
+  MapPin, Lock, Unlock, Star 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
-import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/ui/Navbar';
 import { 
   JournalEntry, VoiceCapsule, Movie, Game, LocationLog, 
@@ -28,7 +26,7 @@ const TABS = [
 
 export default function JournalPage() {
   const router = useRouter();
-  const { user, profile, partnerProfile, loading, isDemo } = useApp();
+  const { user, profile, partnerProfile, loading } = useApp();
 
   const [activeTab, setActiveTab] = useState('diary');
   
@@ -256,6 +254,7 @@ export default function JournalPage() {
       recorder.start();
       setIsRecording(true);
     } catch (err) {
+      console.error('Audio recorder initialization failed:', err);
       // Mock capture fallback
       setIsRecording(true);
       setTimeout(() => {
@@ -423,6 +422,7 @@ export default function JournalPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {movies.map((movie) => (
                   <div key={movie.id} className="glass p-4 rounded-xl border border-white/5 flex gap-4">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={movie.poster_url || ''} alt={movie.title} className="w-16 h-24 object-cover rounded-lg border border-white/5 bg-slate-950" />
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
@@ -461,6 +461,7 @@ export default function JournalPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {games.map((game) => (
                   <div key={game.id} className="glass p-4 rounded-xl border border-white/5 flex gap-4">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={game.screenshot_url || ''} alt={game.title} className="w-20 h-20 object-cover rounded-lg border border-white/5 bg-slate-950" />
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
@@ -624,7 +625,10 @@ export default function JournalPage() {
                           <div className="mt-1.5 space-y-2">
                             <p className="text-xs text-slate-300 leading-relaxed font-light">{capsule.content}</p>
                             {capsule.assets_paths && capsule.assets_paths.length > 0 && (
-                              <img src={capsule.assets_paths[0]} alt="Capsule Asset" className="rounded max-h-24 object-cover w-full" />
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={capsule.assets_paths[0]} alt="Capsule Asset" className="rounded max-h-24 object-cover w-full" />
+                              </>
                             )}
                           </div>
                         )}

@@ -541,3 +541,24 @@ create trigger update_breakup_requests_updated_at before update on public.breaku
 create trigger update_sandbox_cards_updated_at before update on public.sandbox_cards for each row execute procedure public.update_updated_at_column();
 create trigger update_drawings_updated_at before update on public.drawings for each row execute procedure public.update_updated_at_column();
 create trigger update_safe_space_updated_at before update on public.safe_space for each row execute procedure public.update_updated_at_column();
+
+-- 21. Indexes for performance optimizations
+create index if not exists idx_profiles_couple_id on public.profiles(couple_id);
+create index if not exists idx_invite_codes_issuer_id on public.invite_codes(issuer_id);
+create index if not exists idx_breakup_requests_couple_id on public.breakup_requests(couple_id);
+create index if not exists idx_memories_couple_id on public.memories(couple_id);
+create index if not exists idx_memory_assets_memory_id on public.memory_assets(memory_id);
+create index if not exists idx_sandbox_cards_couple_id on public.sandbox_cards(couple_id);
+create index if not exists idx_drawings_couple_id on public.drawings(couple_id);
+create index if not exists idx_drawing_assets_drawing_id on public.drawing_assets(drawing_id);
+create index if not exists idx_mood_logs_user_id on public.mood_logs(user_id);
+create index if not exists idx_wants_couple_id on public.wants(couple_id);
+create index if not exists idx_movies_couple_id on public.movies(couple_id);
+create index if not exists idx_games_couple_id on public.games(couple_id);
+create index if not exists idx_locations_couple_id on public.locations(couple_id);
+create index if not exists idx_journals_couple_id on public.journals(couple_id);
+create index if not exists idx_voice_capsules_couple_id on public.voice_capsules(couple_id);
+create index if not exists idx_love_letters_couple_id on public.love_letters(couple_id);
+create index if not exists idx_time_capsules_couple_id on public.time_capsules(couple_id);
+create index if not exists idx_notifications_couple_id_recipient_id on public.notifications(couple_id, recipient_id);
+create index if not exists idx_achievements_couple_id on public.achievements(couple_id);
