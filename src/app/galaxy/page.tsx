@@ -12,7 +12,7 @@ import { motion as framerMotion, AnimatePresence } from 'framer-motion';
 
 export default function GalaxyPage() {
   const router = useRouter();
-  const { user, profile, loading } = useApp();
+  const { user, profile, loading, logOut } = useApp();
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
@@ -77,9 +77,18 @@ export default function GalaxyPage() {
   if (loading || !profile) {
     return (
       <div className="min-h-screen bg-slate-950 flex justify-center items-center">
-        <div className="text-center space-y-3">
+        <div className="text-center space-y-4">
           <Compass className="w-10 h-10 text-brand-cyan animate-spin-slow mx-auto" />
-          <p className="text-xs text-slate-400 uppercase tracking-widest">Warping to your Galaxy coordinates...</p>
+          <p className="text-xs text-slate-400 uppercase tracking-widest font-mono">Warping to your Galaxy coordinates...</p>
+          <button
+            onClick={async () => {
+              await logOut();
+              router.push('/login');
+            }}
+            className="mt-4 text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer block mx-auto font-mono"
+          >
+            Stuck? Go to Sign In Page
+          </button>
         </div>
       </div>
     );
