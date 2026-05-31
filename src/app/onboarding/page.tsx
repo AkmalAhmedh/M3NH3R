@@ -22,16 +22,37 @@ export default function OnboardingPage() {
   const [pendingPartnerName, setPendingPartnerName] = useState<string | null>(null);
   const [canceling, setCanceling] = useState(false);
 
+  const [wasWaiting, setWasWaiting] = useState(false);
+
+  // Track if we were waiting for partner sync
+  useEffect(() => {
+    if (profile && !profile.couple_id) {
+      setWasWaiting(true);
+    }
+  }, [profile]);
+
   // Redirect to login if unauthenticated, or to dashboard if already linked
   useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        router.push('/login');
-      } else if (profile?.couple_id) {
-        router.push('/dashboard');
+    if (!loading && user) {
+      if (profile?.couple_id) {
+        if (wasWaiting && !successLinked) {
+          // Connection success! Trigger confetti and transition to dashboard
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
+          });
+          setSuccessLinked(true);
+          setTimeout(() => {
+            router.push('/dashboard');
+          }, 3000);
+        } else if (!successLinked) {
+          router.push('/dashboard');
+        }
       }
     }
-  }, [user, profile, loading, router]);
+  }, [user, profile, loading, router, wasWaiting, successLinked]);
 
   // Retrieve or auto-generate active invite code on load
   useEffect(() => {
@@ -62,6 +83,21 @@ export default function OnboardingPage() {
       setPendingPartnerName(null);
     }
   }, [profile?.pending_partner_id]);
+
+  // Fallback polling: Check profile status periodically if we are waiting for partner coupling
+  useEffect(() => {
+    if (!profile?.pending_partner_id || successLinked) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await refreshState();
+      } catch (err) {
+        console.error('Polling error while refreshing onboarding state:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [profile?.pending_partner_id, refreshState, successLinked]);
 
   const handleGenerateCode = async () => {
     if (!profile?.id) return;
