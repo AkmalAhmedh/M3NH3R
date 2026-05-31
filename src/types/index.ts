@@ -1,12 +1,11 @@
 export interface Profile {
   id: string;
   couple_id: string | null;
-  pending_partner_id: string | null;
   email: string;
   username: string;
-  avatar_url: string | null;
-  mood: string | null;
-  mood_emoji: string | null;
+  avatar_url?: string;
+  mood?: string;
+  mood_emoji?: string | null;
   last_active_at: string | null;
   created_at: string;
   updated_at: string;
@@ -14,10 +13,26 @@ export interface Profile {
 
 export interface Couple {
   id: string;
-  name: string | null;
-  anniversary_date: string | null;
+  name: string;
+  user1_id: string;
+  user2_id: string;
+  status: 'active' | 'breakup_pending' | 'ended';
+  shared_key?: string;
+  anniversary_date?: string;
   created_at: string;
   updated_at: string;
+  ended_at?: string;
+  breakup_initiator_id?: string;
+}
+
+export interface PartnerInvite {
+  id: string;
+  code: string;
+  owner_id: string;
+  target_user_id?: string;
+  status: 'pending' | 'accepted' | 'declined' | 'expired';
+  expires_at: string;
+  created_at: string;
 }
 
 export interface InviteCode {

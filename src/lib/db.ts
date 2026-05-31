@@ -85,42 +85,62 @@ export const db = {
   // --- Partner Linking System ---
   generateInviteCode: async (userId: string): Promise<string> => {
     const code = `STAR-${Math.floor(1000 + Math.random() * 9000)}`;
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiration
+
     const { error } = await supabase
-      .from('invite_codes')
-      .insert({ code, issuer_id: userId });
+      .from('partner_invites')
+      .insert({ 
+        code, 
+        owner_id: userId,
+        status: 'pending',
+        expires_at: expiresAt.toISOString()
+      });
     if (error) throw error;
     return code;
   },
 
   getInviteCode: async (userId: string): Promise<string | null> => {
     const { data, error } = await supabase
-      .from('invite_codes')
+      .from('partner_invites')
       .select('code')
-      .eq('issuer_id', userId)
-      .eq('is_used', false)
+      .eq('owner_id', userId)
+      .eq('status', 'pending')
+      .gte('expires_at', new Date().toISOString())
       .maybeSingle();
     if (error || !data) return null;
     return data.code;
   },
 
-  linkPartner: async (myId: string, inviteCode: string): Promise<{ linked: boolean; couple: Couple | null }> => {
+  requestPartnerConnection: async (inviteCode: string): Promise<{ success: boolean; invite_id?: string }> => {
     const { data, error } = await supabase
-      .rpc('link_partner_mutual', { invite_code: inviteCode });
+      .rpc('request_partner_connection', { invite_code_input: inviteCode });
     if (error) throw error;
+    return data as { success: boolean; invite_id: string };
+  },
 
-    const res = data as { linked: boolean; couple_id: string | null };
-    if (res.linked && res.couple_id) {
-      const couple = await db.getCouple(res.couple_id);
-      return { linked: true, couple };
-    }
-    return { linked: false, couple: null };
+  acceptPartnerConnection: async (inviteId: string): Promise<{ success: boolean; couple_id?: string }> => {
+    const { data, error } = await supabase
+      .rpc('accept_partner_connection', { invite_id_input: inviteId });
+    if (error) throw error;
+    return data as { success: boolean; couple_id: string };
+  },
+
+  declinePartnerConnection: async (inviteId: string): Promise<{ success: boolean }> => {
+    const { data, error } = await supabase
+      .rpc('decline_partner_connection', { invite_id_input: inviteId });
+    if (error) throw error;
+    return data as { success: boolean };
   },
 
   cancelPendingLink: async (myId: string): Promise<void> => {
+    // If user initiated a request (meaning they are target_user_id), they can cancel it
+    // by resetting target_user_id on the invite.
     const { error } = await supabase
-      .from('profiles')
-      .update({ pending_partner_id: null })
-      .eq('id', myId);
+      .from('partner_invites')
+      .update({ target_user_id: null })
+      .eq('target_user_id', myId)
+      .eq('status', 'pending');
     if (error) throw error;
   },
 
@@ -131,7 +151,7 @@ export const db = {
       .eq('id', coupleId)
       .single();
     if (error) return null;
-    return data;
+    return data as Couple;
   },
 
   updateAnniversary: async (coupleId: string, date: string): Promise<Couple | null> => {
@@ -142,51 +162,18 @@ export const db = {
       .select()
       .single();
     if (error) throw error;
-    return data;
+    return data as Couple;
   },
 
   // --- Breakup Consent System ---
-  initiateBreakup: async (coupleId: string, myId: string): Promise<BreakupRequest> => {
-    const { data, error } = await supabase
-      .from('breakup_requests')
-      .insert({ couple_id: coupleId, initiator_id: myId, status: 'pending' })
-      .select()
-      .single();
+  initiateBreakup: async (coupleId: string, myId: string): Promise<void> => {
+    const { error } = await supabase.rpc('initiate_breakup');
     if (error) throw error;
-    return data;
-  },
-
-  getBreakupRequest: async (coupleId: string): Promise<BreakupRequest | null> => {
-    const { data, error } = await supabase
-      .from('breakup_requests')
-      .select('*')
-      .eq('couple_id', coupleId)
-      .eq('status', 'pending')
-      .maybeSingle();
-    if (error) return null;
-    return data;
   },
 
   respondToBreakup: async (requestId: string, accept: boolean, coupleId: string): Promise<void> => {
-    const status = accept ? 'accepted' : 'declined';
-    const { error: requestErr } = await supabase
-      .from('breakup_requests')
-      .update({ status })
-      .eq('id', requestId);
-    if (requestErr) throw requestErr;
-
-    if (accept) {
-      // Mutual consent reached! Reset couple_id for both profiles to null
-      const { data: updatedProfiles, error: profileErr } = await supabase
-        .from('profiles')
-        .update({ couple_id: null, mood: null, mood_emoji: null })
-        .eq('couple_id', coupleId)
-        .select();
-      
-      if (profileErr || !updatedProfiles || updatedProfiles.length < 2) {
-        throw new Error(`Failed to disconnect profiles (updated ${updatedProfiles?.length || 0} of 2 rows): ${profileErr?.message || 'RLS check failed'}`);
-      }
-    }
+    const { error } = await supabase.rpc('respond_to_breakup', { accept });
+    if (error) throw error;
   },
 
   // --- Memories & Star System ---

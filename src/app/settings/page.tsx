@@ -36,8 +36,9 @@ export default function SettingsPage() {
   const [annSuccess, setAnnSuccess] = useState(false);
 
   // Breakup consent states
-  const [activeBreakup, setActiveBreakup] = useState<BreakupRequest | null>(null);
   const [breakupLoading, setBreakupLoading] = useState(false);
+  const [breakupPending, setBreakupPending] = useState(false);
+  const [imInitiator, setImInitiator] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -49,14 +50,30 @@ export default function SettingsPage() {
     }
   }, [user, profile, loading, router]);
 
+  const fetchBreakupStatus = async () => {
+    if (profile?.couple_id) {
+      try {
+        const c = await db.getCouple(profile.couple_id);
+        if (c?.status === 'breakup_pending') {
+          setBreakupPending(true);
+          setImInitiator(c.breakup_initiator_id === profile.id);
+        } else {
+          setBreakupPending(false);
+          setImInitiator(false);
+        }
+      } catch (err) {
+        console.error('Error fetching couple status:', err);
+      }
+    }
+  };
+
   useEffect(() => {
     const loadSettingsData = async () => {
       if (!profile?.couple_id) return;
       try {
         const wantItems = await db.getWants(profile.couple_id);
         setWants(wantItems);
-        const req = await db.getBreakupRequest(profile.couple_id);
-        setActiveBreakup(req);
+        await fetchBreakupStatus();
         if (couple?.anniversary_date) {
           setAnnDate(couple.anniversary_date);
         }
@@ -119,8 +136,8 @@ export default function SettingsPage() {
     if (!confirm('Are you absolutely sure you want to request ending this relationship? Both partners must consent to unlink.')) return;
     setBreakupLoading(true);
     try {
-      const req = await db.initiateBreakup(profile.couple_id, profile.id);
-      setActiveBreakup(req);
+      await db.initiateBreakup(profile.couple_id, profile.id);
+      await fetchBreakupStatus();
     } catch (err) {
       console.error(err);
     } finally {
@@ -128,21 +145,19 @@ export default function SettingsPage() {
     }
   };
 
-  const handleRespondBreakup = async (accept: boolean) => {
-    if (!activeBreakup || !profile?.couple_id) return;
-    setBreakupLoading(true);
+  const handleRespondToBreakup = async (accept: boolean) => {
+    if (!profile?.couple_id || !breakupPending) return;
     try {
-      await db.respondToBreakup(activeBreakup.id, accept, profile.couple_id);
+      setBreakupLoading(true);
+      await db.respondToBreakup('', accept, profile.couple_id);
+
       if (accept) {
-        // Redirect to onboarding/single state
         window.location.href = '/onboarding';
       } else {
-        // Declined
-        setActiveBreakup(null);
-        alert('Breakup request declined. Your relationship remains active.');
+        await fetchBreakupStatus();
       }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to respond to breakup:', err);
     } finally {
       setBreakupLoading(false);
     }
@@ -173,11 +188,9 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-32">
-      {/* Background radial overlays */}
       <div className="absolute top-0 right-1/4 w-[400px] h-[400px] bg-brand-violet/5 rounded-full filter blur-3xl pointer-events-none" />
       <div className="absolute bottom-10 left-10 w-[400px] h-[400px] bg-brand-fuchsia/5 rounded-full filter blur-3xl pointer-events-none" />
 
-      {/* Main Header */}
       <header className="max-w-5xl mx-auto px-6 pt-10 flex justify-between items-center z-10 relative">
         <div>
           <h1 className="text-2xl font-extrabold tracking-wider bg-gradient-to-r from-brand-violet to-brand-fuchsia bg-clip-text text-transparent flex items-center gap-1.5">
@@ -189,8 +202,7 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      {/* Breakup Consent notification banner */}
-      {activeBreakup && (
+      {breakupPending && (
         <div className="max-w-5xl mx-auto px-6 mt-6 z-10 relative">
           <div className="glass p-4 rounded-xl border border-rose-500/20 bg-rose-950/20 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-3">
@@ -198,24 +210,24 @@ export default function SettingsPage() {
               <div>
                 <span className="text-xs font-bold text-slate-200 block">Mutual Consent Breakup Request Pending</span>
                 <span className="text-[10px] text-slate-400">
-                  {activeBreakup.initiator_id === profile.id 
+                  {imInitiator 
                     ? 'Waiting for your partner to accept the request...' 
                     : 'Your partner has initiated a request to end this connection. Do you accept?'}
                 </span>
               </div>
             </div>
 
-            {activeBreakup.initiator_id !== profile.id && (
+            {!imInitiator && (
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleRespondBreakup(true)}
+                  onClick={() => handleRespondToBreakup(true)}
                   disabled={breakupLoading}
                   className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition cursor-pointer"
                 >
                   Accept
                 </button>
                 <button
-                  onClick={() => handleRespondBreakup(false)}
+                  onClick={() => handleRespondToBreakup(false)}
                   disabled={breakupLoading}
                   className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
                 >
@@ -384,7 +396,7 @@ export default function SettingsPage() {
 
             <button
               onClick={handleInitiateBreakup}
-              disabled={breakupLoading || !!activeBreakup}
+              disabled={breakupLoading || breakupPending}
               className="w-full py-2.5 bg-rose-950/40 border border-rose-500/30 hover:bg-rose-950/60 text-rose-400 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <AlertTriangle className="w-4 h-4" /> End Connection Link

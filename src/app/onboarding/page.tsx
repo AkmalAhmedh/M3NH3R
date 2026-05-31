@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, Sparkles, Copy, Check, Link2, Compass, ShieldAlert, LogOut } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
+import { supabase } from '@/lib/supabaseClient';
 import confetti from 'canvas-confetti';
+import { PartnerInvite, Profile } from '@/types';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -19,85 +21,111 @@ export default function OnboardingPage() {
   const [genLoading, setGenLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successLinked, setSuccessLinked] = useState(false);
-  const [pendingPartnerName, setPendingPartnerName] = useState<string | null>(null);
+  
+  const [myInvite, setMyInvite] = useState<PartnerInvite | null>(null);
+  const [sentRequest, setSentRequest] = useState<PartnerInvite | null>(null);
+  const [requesterProfile, setRequesterProfile] = useState<Profile | null>(null);
+  const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
+
   const [canceling, setCanceling] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const [wasWaiting, setWasWaiting] = useState(false);
-
-  // Track if we were waiting for partner sync
+  // Redirect to dashboard if already linked
   useEffect(() => {
-    if (profile && !profile.couple_id) {
-      setWasWaiting(true);
+    if (!loading && user && profile?.couple_id && !successLinked) {
+      router.push('/dashboard');
     }
-  }, [profile]);
+  }, [user, profile, loading, router, successLinked]);
 
-  // Redirect to login if unauthenticated, or to dashboard if already linked
-  useEffect(() => {
-    if (!loading && user) {
-      if (profile?.couple_id) {
-        if (wasWaiting && !successLinked) {
-          // Connection success! Trigger confetti and transition to dashboard
-          confetti({
-            particleCount: 150,
-            spread: 80,
-            origin: { y: 0.6 },
-            colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
-          });
-          setSuccessLinked(true);
-          setTimeout(() => {
-            router.push('/dashboard');
-          }, 3000);
-        } else if (!successLinked) {
-          router.push('/dashboard');
-        }
+  const fetchInvites = useCallback(async () => {
+    if (!user?.id) return;
+    
+    // Fetch invite owned by me
+    const { data: myData } = await supabase
+      .from('partner_invites')
+      .select('*')
+      .eq('owner_id', user.id)
+      .eq('status', 'pending')
+      .gte('expires_at', new Date().toISOString())
+      .maybeSingle();
+      
+    if (myData) {
+      setMyInvite(myData as PartnerInvite);
+      setGeneratedCode(myData.code);
+      if (myData.target_user_id) {
+        db.getCurrentProfile(myData.target_user_id).then(setRequesterProfile);
+      } else {
+        setRequesterProfile(null);
       }
-    }
-  }, [user, profile, loading, router, wasWaiting, successLinked]);
-
-  // Retrieve or auto-generate active invite code on load
-  useEffect(() => {
-    if (profile?.id) {
-      db.getInviteCode(profile.id).then(async (code) => {
-        if (code) {
-          setGeneratedCode(code);
-        } else {
-          try {
-            const newCode = await db.generateInviteCode(profile.id);
-            setGeneratedCode(newCode);
-          } catch (err) {
-            console.error('Failed to auto-generate code:', err);
-          }
-        }
-      });
-    }
-  }, [profile?.id]);
-
-  // Load pending partner username if pending link exists
-  useEffect(() => {
-    if (profile?.pending_partner_id) {
-      db.getCurrentProfile(profile.pending_partner_id).then((p) => {
-        if (p) setPendingPartnerName(p.username || p.email.split('@')[0]);
-      });
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPendingPartnerName(null);
+      setMyInvite(null);
+      // Don't clear generated code if it exists, maybe they just generated one and we are waiting for state
     }
-  }, [profile?.pending_partner_id]);
 
-  // Fallback polling: Check profile status periodically if we are waiting for partner coupling
+    // Fetch invite requested by me
+    const { data: targetData } = await supabase
+      .from('partner_invites')
+      .select('*')
+      .eq('target_user_id', user.id)
+      .eq('status', 'pending')
+      .gte('expires_at', new Date().toISOString())
+      .maybeSingle();
+
+    if (targetData) {
+      setSentRequest(targetData as PartnerInvite);
+      db.getCurrentProfile(targetData.owner_id).then(setTargetProfile);
+    } else {
+      setSentRequest(null);
+      setTargetProfile(null);
+    }
+  }, [user?.id]);
+
   useEffect(() => {
-    if (!profile?.pending_partner_id || successLinked) return;
+    if (user?.id) {
+      fetchInvites();
 
-    const interval = setInterval(async () => {
-      try {
-        await refreshState();
-      } catch (err) {
-        console.error('Polling error while refreshing onboarding state:', err);
-      }
-    }, 3000);
+      const channel = supabase.channel(`invites:${user.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'partner_invites', filter: `owner_id=eq.${user.id}` }, () => {
+          fetchInvites();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'partner_invites', filter: `target_user_id=eq.${user.id}` }, () => {
+          fetchInvites();
+          refreshState();
+        })
+        .subscribe();
 
-    return () => clearInterval(interval);
-  }, [profile?.pending_partner_id, refreshState, successLinked]);
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user?.id, fetchInvites, refreshState]);
+
+  // If a request was sent and is suddenly gone (e.g. accepted), refresh state to pick up couple_id
+  useEffect(() => {
+    if (!sentRequest && targetProfile && !profile?.couple_id) {
+      refreshState();
+    }
+  }, [sentRequest, targetProfile, profile?.couple_id, refreshState]);
+
+  // If we just got a couple_id and successLinked isn't true yet, it means our request was accepted remotely!
+  useEffect(() => {
+    if (profile?.couple_id && targetProfile && !successLinked) {
+      triggerCinematic();
+    }
+  }, [profile?.couple_id, targetProfile, successLinked]);
+
+  const triggerCinematic = () => {
+    confetti({
+      particleCount: 150,
+      spread: 80,
+      origin: { y: 0.6 },
+      colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
+    });
+    setSuccessLinked(true);
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 4000);
+  };
 
   const handleGenerateCode = async () => {
     if (!profile?.id) return;
@@ -106,6 +134,7 @@ export default function OnboardingPage() {
     try {
       const code = await db.generateInviteCode(profile.id);
       setGeneratedCode(code);
+      await fetchInvites();
     } catch (err: unknown) {
       setErrorMsg((err as Error).message || 'Failed to generate code.');
     } finally {
@@ -126,35 +155,8 @@ export default function OnboardingPage() {
     setLinkingLoading(true);
     setErrorMsg('');
     try {
-      // Set a 15-second timeout for the connection request to prevent infinite loading
-      let timeoutId: NodeJS.Timeout;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('Connection timed out. Please check your internet connection or database status.')), 15000);
-      });
-
-      const linkPromise = db.linkPartner(profile.id, inviteCode.trim().toUpperCase());
-      const res = await Promise.race([linkPromise, timeoutPromise]);
-      clearTimeout(timeoutId!);
-      
-      if (res.linked) {
-        // Connection Confetti Trigger!
-        confetti({
-          particleCount: 150,
-          spread: 80,
-          origin: { y: 0.6 },
-          colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
-        });
-        setSuccessLinked(true);
-      }
-      
-      await refreshState();
-
-      if (res.linked) {
-        // Delay redirect to let them enjoy the success state
-        setTimeout(() => {
-          router.push('/dashboard');
-        }, 3000);
-      }
+      await db.requestPartnerConnection(inviteCode.trim().toUpperCase());
+      await fetchInvites();
     } catch (err: unknown) {
       setErrorMsg((err as Error).message || 'Failed to link partner. Verify the code.');
     } finally {
@@ -168,11 +170,38 @@ export default function OnboardingPage() {
     setErrorMsg('');
     try {
       await db.cancelPendingLink(profile.id);
-      await refreshState();
+      await fetchInvites();
     } catch (err: unknown) {
       setErrorMsg((err as Error).message || 'Failed to cancel request.');
     } finally {
       setCanceling(false);
+    }
+  };
+
+  const handleAcceptRequest = async () => {
+    if (!myInvite) return;
+    setActionLoading(true);
+    try {
+      await db.acceptPartnerConnection(myInvite.id);
+      await refreshState();
+      triggerCinematic();
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || 'Failed to accept connection.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeclineRequest = async () => {
+    if (!myInvite) return;
+    setActionLoading(true);
+    try {
+      await db.declinePartnerConnection(myInvite.id);
+      await fetchInvites();
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || 'Failed to decline connection.');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -182,36 +211,60 @@ export default function OnboardingPage() {
         <AnimatePresence>
           {successLinked ? (
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 200 }}
-              className="text-center space-y-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1.5 }}
+              className="text-center space-y-4 absolute inset-0 bg-slate-950 z-50 flex flex-col justify-center items-center"
             >
-              <div className="inline-flex p-6 bg-gradient-to-tr from-brand-violet to-brand-fuchsia rounded-full text-white shadow-2xl relative">
-                <Heart className="w-12 h-12 fill-white animate-pulse" />
-                <Sparkles className="w-6 h-6 text-brand-gold absolute -top-1 -right-1 animate-bounce" />
+              {/* Cinematic Background Stars */}
+              <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                {[...Array(50)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className="absolute bg-white rounded-full"
+                    style={{
+                      width: Math.random() * 3 + 'px',
+                      height: Math.random() * 3 + 'px',
+                      top: Math.random() * 100 + '%',
+                      left: Math.random() * 100 + '%',
+                    }}
+                    animate={{ opacity: [0, 1, 0] }}
+                    transition={{ duration: Math.random() * 2 + 1, repeat: Infinity }}
+                  />
+                ))}
               </div>
-              <h2 className="text-3xl font-extrabold text-glow-violet bg-gradient-to-r from-brand-cyan via-brand-violet to-brand-fuchsia bg-clip-text text-transparent">
-                UNIVERSE ESTABLISHED
-              </h2>
-              <p className="text-slate-300 max-w-sm font-light leading-relaxed">
-                Your heart pathways have been bound together. Preparing flight path into your shared galaxy...
-              </p>
-              <div className="w-24 h-1 bg-gradient-to-r from-brand-cyan to-brand-fuchsia mx-auto mt-4 rounded-full animate-pulse" />
+
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.5, type: 'spring', stiffness: 200 }}
+                className="z-10 text-center"
+              >
+                <div className="inline-flex p-8 bg-gradient-to-tr from-brand-violet to-brand-fuchsia rounded-full text-white shadow-2xl relative">
+                  <Heart className="w-16 h-16 fill-white animate-pulse" />
+                  <Sparkles className="w-8 h-8 text-brand-gold absolute -top-1 -right-1 animate-bounce" />
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 1, duration: 1 }}
+                className="z-10"
+              >
+                <h2 className="text-3xl md:text-5xl font-extrabold text-glow-violet bg-gradient-to-r from-brand-cyan via-brand-violet to-brand-fuchsia bg-clip-text text-transparent mb-4 tracking-widest">
+                  {profile?.username} ✦ {requesterProfile?.username || targetProfile?.username || 'Partner'}
+                </h2>
+                <p className="text-slate-300 max-w-md font-light leading-relaxed mx-auto text-lg">
+                  A new universe has been created.
+                </p>
+                <div className="w-32 h-1 bg-gradient-to-r from-brand-cyan to-brand-fuchsia mx-auto mt-6 rounded-full animate-pulse" />
+              </motion.div>
             </motion.div>
           ) : (
             <div className="text-center space-y-4">
               <Compass className="w-10 h-10 text-brand-cyan animate-spin-slow mx-auto" />
               <p className="text-xs text-slate-400 uppercase tracking-widest font-mono">Opening Universe Gateway...</p>
-              <button
-                onClick={async () => {
-                  await logOut();
-                  router.push('/login');
-                }}
-                className="mt-4 text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer block mx-auto font-mono"
-              >
-                Stuck? Go to Sign In Page
-              </button>
             </div>
           )}
         </AnimatePresence>
@@ -219,14 +272,57 @@ export default function OnboardingPage() {
     );
   }
 
-  if (profile?.pending_partner_id) {
+  // Phase 3: Owner receiving a request
+  if (myInvite?.target_user_id && requesterProfile) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-6 relative overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-brand-violet/20 rounded-full filter blur-[100px] pointer-events-none animate-pulse" />
+        
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="glass p-8 md:p-12 rounded-3xl border border-brand-violet/30 shadow-2xl max-w-lg w-full text-center relative z-10"
+        >
+          <div className="w-20 h-20 mx-auto bg-gradient-to-tr from-brand-cyan to-brand-violet rounded-full flex items-center justify-center mb-6 shadow-lg shadow-brand-violet/20">
+            <Link2 className="w-10 h-10 text-white" />
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-4 text-white">Connection Request</h2>
+          <p className="text-slate-300 text-lg mb-8 leading-relaxed">
+            <span className="font-bold text-brand-cyan">{requesterProfile.username || requesterProfile.email.split('@')[0]}</span> wants to connect with you.
+          </p>
+          
+          <div className="flex gap-4">
+            <button 
+              onClick={handleDeclineRequest}
+              disabled={actionLoading}
+              className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition disabled:opacity-50"
+            >
+              Decline
+            </button>
+            <button 
+              onClick={handleAcceptRequest}
+              disabled={actionLoading}
+              className="flex-1 py-3 bg-gradient-to-r from-brand-cyan to-brand-violet text-white rounded-xl font-bold hover:opacity-90 transition shadow-lg shadow-brand-violet/20 disabled:opacity-50"
+            >
+              Accept
+            </button>
+          </div>
+          
+          {errorMsg && <p className="text-rose-400 mt-4 text-sm">{errorMsg}</p>}
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Phase 2: Requester waiting for approval
+  if (sentRequest) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col justify-between p-6 md:p-12 relative overflow-hidden">
         {/* Background gradients */}
         <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-brand-violet/10 rounded-full filter blur-3xl pointer-events-none" />
         <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-brand-fuchsia/10 rounded-full filter blur-3xl pointer-events-none" />
 
-        {/* Top Header */}
         <div className="flex justify-between items-center z-10 w-full">
           <div className="flex items-center gap-2">
             <Compass className="w-6 h-6 text-brand-cyan" />
@@ -242,7 +338,6 @@ export default function OnboardingPage() {
           </button>
         </div>
 
-        {/* Pending Sync Card */}
         <div className="flex-1 flex flex-col justify-center items-center z-10 my-8 animate-fadeIn">
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
@@ -252,7 +347,6 @@ export default function OnboardingPage() {
             <div className="absolute -top-16 -right-16 w-32 h-32 bg-brand-cyan/10 rounded-full blur-2xl" />
             <div className="absolute -bottom-16 -left-16 w-32 h-32 bg-brand-violet/10 rounded-full blur-2xl" />
 
-            {/* Spinning orbital animation */}
             <div className="relative w-28 h-28 mx-auto mb-6 flex items-center justify-center">
               <div className="absolute inset-0 border border-brand-cyan/20 rounded-full" />
               <motion.div 
@@ -270,51 +364,34 @@ export default function OnboardingPage() {
             </div>
 
             <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-brand-cyan to-brand-fuchsia bg-clip-text text-transparent">
-              Waiting for Partner Sync
+              Awaiting Approval
             </h2>
             <p className="text-xs text-slate-400 leading-relaxed mb-6">
-              You requested connection with <span className="text-brand-cyan font-semibold">@{pendingPartnerName || 'your partner'}</span>.
-              To complete the link, they must log in and enter your Space Code below:
+              You requested connection with <span className="text-brand-cyan font-semibold">@{targetProfile?.username || 'your partner'}</span>.
+              Waiting for them to accept the request.
             </p>
 
-            {/* Display my code for partner to use */}
-            <div className="mb-6 p-4 bg-slate-900/50 border border-white/5 rounded-xl">
-              <span className="block text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">Your Space Code</span>
-              <span className="text-2xl font-black text-brand-violet tracking-widest font-mono">
-                {generatedCode || 'Loading...'}
-              </span>
-            </div>
-
-            {errorMsg && (
-              <div className="text-xs text-rose-400 mb-4">
-                {errorMsg}
-              </div>
-            )}
+            {errorMsg && <div className="text-xs text-rose-400 mb-4">{errorMsg}</div>}
 
             <button
               onClick={handleCancelRequest}
               disabled={canceling}
               className="w-full py-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs font-semibold hover:bg-rose-500/20 transition cursor-pointer disabled:opacity-50"
             >
-              {canceling ? 'Canceling...' : 'Cancel Sync Request'}
+              {canceling ? 'Canceling...' : 'Cancel Request'}
             </button>
           </motion.div>
-        </div>
-
-        <div className="text-center text-xs text-slate-500 z-10">
-          Once both devices have connected, you will be redirected to your galaxy dashboard automatically.
         </div>
       </div>
     );
   }
 
+  // Phase 1: Generate or Enter Code
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-between p-6 md:p-12 relative overflow-hidden">
-      {/* Background gradients */}
       <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-brand-violet/10 rounded-full filter blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-brand-fuchsia/10 rounded-full filter blur-3xl pointer-events-none" />
 
-      {/* Top Header */}
       <div className="flex justify-between items-center z-10 w-full">
         <div className="flex items-center gap-2">
           <Compass className="w-6 h-6 text-brand-cyan" />
@@ -330,7 +407,6 @@ export default function OnboardingPage() {
         </button>
       </div>
 
-      {/* Main Linking Section */}
       <div className="flex-1 flex flex-col justify-center items-center z-10 my-8">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -347,7 +423,6 @@ export default function OnboardingPage() {
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-3xl">
-          {/* Card 1: Generate Code */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
@@ -390,7 +465,6 @@ export default function OnboardingPage() {
             </div>
           </motion.div>
 
-          {/* Card 2: Enter Partner's Code */}
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
@@ -438,11 +512,6 @@ export default function OnboardingPage() {
             </form>
           </motion.div>
         </div>
-      </div>
-
-      {/* Footnote instruction */}
-      <div className="text-center text-xs text-slate-500 z-10">
-        Need help? Have your partner generate a code, then copy it here exactly.
       </div>
     </div>
   );
