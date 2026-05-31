@@ -127,12 +127,14 @@ export default function OnboardingPage() {
     setErrorMsg('');
     try {
       // Set a 15-second timeout for the connection request to prevent infinite loading
-      const linkPromise = db.linkPartner(profile.id, inviteCode.trim().toUpperCase());
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Connection timed out. Please check your internet connection or database status.')), 15000)
-      );
+      let timeoutId: NodeJS.Timeout;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Connection timed out. Please check your internet connection or database status.')), 15000);
+      });
 
+      const linkPromise = db.linkPartner(profile.id, inviteCode.trim().toUpperCase());
       const res = await Promise.race([linkPromise, timeoutPromise]);
+      clearTimeout(timeoutId!);
       
       if (res.linked) {
         // Connection Confetti Trigger!

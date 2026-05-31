@@ -26,7 +26,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [couple, setCouple] = useState<Couple | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfileAndCouple = async (userId: string, userEmail?: string) => {
+  const fetchProfileAndCouple = React.useCallback(async (userId: string, userEmail?: string) => {
     try {
       let myProfile = await db.getCurrentProfile(userId);
       
@@ -54,13 +54,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.error('Error fetching profile and couple info:', err);
     }
-  };
+  }, []);
 
-  const refreshState = async () => {
+  const refreshState = React.useCallback(async () => {
     if (user) {
       await fetchProfileAndCouple(user.id);
     }
-  };
+  }, [user, fetchProfileAndCouple]);
 
   const updateMood = async (mood: string, emoji: string) => {
     if (profile) {
