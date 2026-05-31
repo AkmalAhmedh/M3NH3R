@@ -32,9 +32,18 @@ alter table public.profiles enable row level security;
 
 -- Helper Function to fetch current user's couple_id
 create or replace function public.get_user_couple_id()
-returns uuid as $$
-  select couple_id from public.profiles where id = auth.uid();
-$$ language sql security definer stable;
+returns uuid 
+security definer
+stable
+set search_path = public
+as $$
+declare
+  c_id uuid;
+begin
+  select couple_id into c_id from public.profiles where id = auth.uid();
+  return c_id;
+end;
+$$ language plpgsql;
 
 -- RLS Policies for Couples
 create policy "Users can view their own couple"
