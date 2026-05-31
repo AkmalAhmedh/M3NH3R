@@ -46,9 +46,9 @@ end;
 $$ language plpgsql;
 
 -- RLS Policies for Couples
-create policy "Users can view their own couple"
+create policy "Users can view couples"
     on public.couples for select
-    using (id = public.get_user_couple_id());
+    using (auth.role() = 'authenticated');
 
 create policy "Users can update their own couple"
     on public.couples for update
