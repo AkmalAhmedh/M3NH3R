@@ -155,6 +155,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isDemo, user]);
 
+  // Listen to updates on the current user's profile to detect when they are linked by their partner
+  useEffect(() => {
+    if (isDemo || !user?.id) return;
+
+    const channel = supabase
+      .channel(`user-profile-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${user.id}`
+        },
+        async (payload) => {
+          const updatedProfile = payload.new as Profile;
+          if (updatedProfile && updatedProfile.couple_id) {
+            await fetchProfileAndCouple(user.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, isDemo]);
+
   // Real-time synchronization subscription for profiles/notifications
   useEffect(() => {
     if (isDemo || !profile?.couple_id) return;
