@@ -121,7 +121,12 @@ export function initLocalDB() {
 // ----------------------------------------------------
 
 export const db = {
-  isSupabase: () => !!IS_SUPABASE_CONNECTED,
+  isSupabase: () => {
+    if (typeof window !== 'undefined' && localStorage.getItem('universe_force_demo') === 'true') {
+      return false;
+    }
+    return !!IS_SUPABASE_CONNECTED;
+  },
 
   // --- Profile / Auth Helpers ---
   createProfile: async (userId: string, email: string, username?: string): Promise<Profile> => {

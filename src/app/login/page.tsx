@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, Sparkles, Volume2, VolumeX, Moon, UserPlus, LogIn, Compass } from 'lucide-react';
+import { Mail, Lock, Sparkles, Volume2, VolumeX, Moon, UserPlus, LogIn, Compass, ShieldAlert } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -19,9 +19,29 @@ export default function LoginPage() {
   const [infoMsg, setInfoMsg] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [isForcedDemo, setIsForcedDemo] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsForcedDemo(localStorage.getItem('universe_force_demo') === 'true');
+    }
+  }, []);
+
+  useEffect(() => {
+    let timer: any;
+    if (formLoading) {
+      timer = setTimeout(() => {
+        setShowDiagnostics(true);
+      }, 5000);
+    } else {
+      setShowDiagnostics(false);
+    }
+    return () => clearTimeout(timer);
+  }, [formLoading]);
 
   // Background star drifter simulation
   useEffect(() => {
@@ -316,6 +336,40 @@ export default function LoginPage() {
               </motion.div>
             )}
 
+            {showDiagnostics && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-xl space-y-2 text-xs text-left"
+              >
+                <div className="text-brand-gold font-bold flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4" /> Connection timeout detected
+                </div>
+                <p className="text-slate-400 text-[10px] leading-relaxed">
+                  Your browser is waiting for the Supabase server. Check your internet connection or verify your Supabase settings. You can switch to Offline Demo mode to skip the server.
+                </p>
+                <div className="flex gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem('universe_force_demo', 'true');
+                      window.location.reload();
+                    }}
+                    className="flex-1 py-1.5 px-2 bg-brand-cyan/20 border border-brand-cyan/30 text-brand-cyan rounded-lg hover:bg-brand-cyan/30 transition cursor-pointer text-center font-bold text-[10px]"
+                  >
+                    Switch to Offline Mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormLoading(false)}
+                    className="py-1.5 px-2 bg-slate-800 rounded-lg hover:bg-slate-700 text-slate-300 transition cursor-pointer text-center font-semibold text-[10px]"
+                  >
+                    Stop Loader
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
             <button
               type="submit"
               disabled={formLoading}
@@ -356,6 +410,22 @@ export default function LoginPage() {
               {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
             </button>
           </div>
+
+          {isForcedDemo && (
+            <div className="mt-4 pt-3 border-t border-white/5 text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Running in Offline Mode (LocalStorage)</span>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem('universe_force_demo');
+                  window.location.reload();
+                }}
+                className="text-brand-cyan hover:underline font-semibold cursor-pointer"
+              >
+                Switch to Supabase
+              </button>
+            </div>
+          )}
         </motion.div>
       </AnimatePresence>
       <div className="absolute bottom-6 z-10 text-xs text-slate-500">
