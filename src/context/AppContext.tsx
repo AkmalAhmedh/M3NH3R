@@ -4,9 +4,10 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { db, initLocalDB } from '../lib/db';
 import { Profile, Couple } from '../types';
+import { User } from '@supabase/supabase-js';
 
 interface AppContextType {
-  user: any;
+  user: User | null;
   profile: Profile | null;
   partnerProfile: Profile | null;
   couple: Couple | null;
@@ -20,12 +21,32 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== 'undefined') {
+      const savedUser = localStorage.getItem('universe_session_user');
+      if (savedUser) {
+        try {
+          return JSON.parse(savedUser) as User;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
   const [profile, setProfile] = useState<Profile | null>(null);
   const [partnerProfile, setPartnerProfile] = useState<Profile | null>(null);
   const [couple, setCouple] = useState<Couple | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isDemo, setIsDemo] = useState(true);
+  const [isDemo] = useState(() => {
+    if (typeof window !== 'undefined') {
+      if (localStorage.getItem('universe_force_demo') === 'true') {
+        return true;
+      }
+    }
+    const effectiveSupabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    return !(!!effectiveSupabaseUrl && effectiveSupabaseUrl !== 'https://placeholder-url-for-build.supabase.co');
+  });
 
   const fetchProfileAndCouple = async (userId: string, userEmail?: string) => {
     try {
@@ -94,11 +115,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     // Initialise Local Storage DB fallback
     initLocalDB();
-    
-    const demoActive = !db.isSupabase();
-    setIsDemo(demoActive);
 
-    if (!demoActive) {
+    if (!isDemo) {
       // 1. Supabase Session Listener
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session) {
@@ -128,17 +146,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     } else {
       // 2. Demo Local Storage Session listener
-      const savedUser = localStorage.getItem('universe_session_user');
-      if (savedUser) {
-        const parsed = JSON.parse(savedUser);
-        setUser(parsed);
-        fetchProfileAndCouple(parsed.id).then(() => setLoading(false));
+      if (user) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        fetchProfileAndCouple(user.id).then(() => setLoading(false));
       } else {
-        setUser(null);
         setLoading(false);
       }
     }
-  }, [isDemo]);
+  }, [isDemo, user]);
 
   // Real-time synchronization subscription for profiles/notifications
   useEffect(() => {
@@ -155,7 +170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           table: 'profiles',
           filter: `couple_id=eq.${profile.couple_id}`
         },
-        async (payload) => {
+        async () => {
           // Re-fetch profiles to update app state
           await fetchProfileAndCouple(profile.id);
         }

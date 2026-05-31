@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -106,7 +106,7 @@ export default function JournalPage() {
     }
   }, [user, profile, loading, router]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!profile?.couple_id || !profile?.id) return;
     try {
       const jnls = await db.getJournals(profile.couple_id);
@@ -126,13 +126,14 @@ export default function JournalPage() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [profile]);
 
   useEffect(() => {
     if (profile?.couple_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadData();
     }
-  }, [profile?.couple_id, profile?.id]);
+  }, [profile, loadData]);
 
   const togglePlayAudio = (id: string, url: string) => {
     if (playingAudioId === id) {
@@ -355,7 +356,7 @@ export default function JournalPage() {
               ))}
               {journals.length === 0 && (
                 <div className="glass p-12 text-center text-xs text-slate-500 rounded-2xl border border-white/5">
-                  Diary is empty. Let's record your first memory!
+                  Diary is empty. Let&apos;s record your first memory!
                 </div>
               )}
             </div>
@@ -435,7 +436,7 @@ export default function JournalPage() {
                           ))}
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-400 italic line-clamp-2 mt-1">"{movie.review}"</p>
+                      <p className="text-[10px] text-slate-400 italic line-clamp-2 mt-1">&quot;{movie.review}&quot;</p>
                     </div>
                   </div>
                 ))}
@@ -516,7 +517,7 @@ export default function JournalPage() {
                     <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 p-2.5 rounded-lg opacity-0 group-hover:opacity-100 transition pointer-events-none z-10 w-44 shadow-2xl">
                       <span className="block text-[10px] font-bold text-slate-200">{loc.name}</span>
                       <span className="text-[8px] uppercase tracking-wider font-semibold text-brand-cyan block mt-0.5">{loc.type}</span>
-                      {loc.note && <span className="text-[9px] text-slate-400 block mt-1">"{loc.note}"</span>}
+                      {loc.note && <span className="text-[9px] text-slate-400 block mt-1">&quot;{loc.note}&quot;</span>}
                     </div>
                   </div>
                 ))}
@@ -699,7 +700,7 @@ export default function JournalPage() {
                   </div>
                   <div>
                     <label className="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Category</label>
-                    <select value={vCategory} onChange={(e) => setVCategory(e.target.value as any)} className="w-full py-2 px-3 glass-input text-xs bg-slate-900">
+                    <select value={vCategory} onChange={(e) => setVCategory(e.target.value as VoiceCapsule['category'])} className="w-full py-2 px-3 glass-input text-xs bg-slate-900">
                       <option value="good_morning">Good Morning</option>
                       <option value="good_night">Good Night</option>
                       <option value="anniversary">Anniversary</option>
@@ -801,7 +802,7 @@ export default function JournalPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Pin Type</label>
-                      <select value={lType} onChange={(e) => setLType(e.target.value as any)} className="w-full py-2 px-3 glass-input text-xs bg-slate-900">
+                      <select value={lType} onChange={(e) => setLType(e.target.value as LocationLog['type'])} className="w-full py-2 px-3 glass-input text-xs bg-slate-900">
                         <option value="cafe">☕ Cafe</option>
                         <option value="restaurant">🍕 Restaurant</option>
                         <option value="meetup">💖 Meetup</option>

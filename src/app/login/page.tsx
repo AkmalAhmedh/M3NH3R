@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Sparkles, Volume2, VolumeX, Moon, UserPlus, LogIn, Compass, ShieldAlert } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/lib/supabaseClient';
+import { Profile } from '@/types';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,27 +21,27 @@ export default function LoginPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [isForcedDemo, setIsForcedDemo] = useState(false);
+  const [isForcedDemo] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('universe_force_demo') === 'true';
+    }
+    return false;
+  });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsForcedDemo(localStorage.getItem('universe_force_demo') === 'true');
-    }
-  }, []);
-
-  useEffect(() => {
-    let timer: any;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     if (formLoading) {
       timer = setTimeout(() => {
         setShowDiagnostics(true);
       }, 5000);
-    } else {
-      setShowDiagnostics(false);
     }
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      setShowDiagnostics(false);
+    };
   }, [formLoading]);
 
   // Background star drifter simulation
@@ -142,7 +143,7 @@ export default function LoginPage() {
 
     // Save profile to local storage profiles list
     const profiles = JSON.parse(localStorage.getItem('universe_db_profiles') || '[]');
-    const existing = profiles.find((p: any) => p.email === demoUser.email);
+    const existing = profiles.find((p: Profile) => p.email === demoUser.email);
     if (!existing) {
       profiles.push({
         id: demoUser.id,
@@ -205,8 +206,8 @@ export default function LoginPage() {
         if (error) throw error;
         router.push('/onboarding');
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'An error occurred during authentication.');
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || 'An error occurred during authentication.');
     } finally {
       setFormLoading(false);
     }

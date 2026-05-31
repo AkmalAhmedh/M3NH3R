@@ -81,7 +81,7 @@ export interface Drawing {
   couple_id: string;
   name: string;
   thumbnail_url: string | null;
-  canvas_data: any; // SVG/Canvas paths representation
+  canvas_data: unknown; // SVG/Canvas paths representation
   is_pinned: boolean;
   created_by: string;
   created_at: string;
@@ -209,7 +209,7 @@ export interface AppNotification {
   type: string;
   message: string;
   is_read: boolean;
-  metadata: any;
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 

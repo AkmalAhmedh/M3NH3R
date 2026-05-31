@@ -47,8 +47,8 @@ export default function OnboardingPage() {
     try {
       const code = await db.generateInviteCode(profile.id);
       setGeneratedCode(code);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to generate code.');
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || 'Failed to generate code.');
     } finally {
       setGenLoading(false);
     }
@@ -84,8 +84,8 @@ export default function OnboardingPage() {
       setTimeout(() => {
         router.push('/dashboard');
       }, 3000);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to link partner. Verify the code.');
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message || 'Failed to link partner. Verify the code.');
     } finally {
       setLinkingLoading(false);
     }
@@ -159,7 +159,7 @@ export default function OnboardingPage() {
             Connect Your Hearts
           </h1>
           <p className="text-slate-400 text-sm md:text-base max-w-md mx-auto font-light leading-relaxed">
-            Every galaxy requires two celestial bodies to orbit each other. Share your code or enter your partner's code to begin.
+            Every galaxy requires two celestial bodies to orbit each other. Share your code or enter your partner&apos;s code to begin.
           </p>
         </motion.div>
 
@@ -218,7 +218,7 @@ export default function OnboardingPage() {
               <div className="w-10 h-10 rounded-full bg-brand-cyan/20 flex items-center justify-center text-brand-cyan mb-4">
                 <Link2 className="w-5 h-5" />
               </div>
-              <h2 className="text-xl font-semibold mb-2">Enter Partner's Code</h2>
+              <h2 className="text-xl font-semibold mb-2">Enter Partner&apos;s Code</h2>
               <p className="text-xs text-slate-400 leading-relaxed mb-6">
                 If your partner has generated an invite code, enter it below to request instant coupling.
               </p>

@@ -109,7 +109,7 @@ Current Activity: "Finish Coop Campaign in Portal 2" (Game).
       answer: "✨ I've searched the constellations of our database! Currently, I see your core memories include 'Our First Picnic' (Central Park, April 12, 2026) and 'See the Northern Lights' in your wishlist. If you have logged other memories recently, make sure to sync them to the stars!"
     });
 
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: (error as Error).message || 'Server error' }, { status: 500 });
   }
 }

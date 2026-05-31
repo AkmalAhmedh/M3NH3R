@@ -32,19 +32,26 @@ const GalaxyScene: React.FC<GalaxySceneProps> = ({ memories, onSelectStar }) => 
 
   // Generate spiral particles
   const [positions, colors] = useMemo(() => {
+    // Deterministic seeded random number generator to resolve purity checks
+    let seed = 12345;
+    const seededRandom = () => {
+      const x = Math.sin(seed++) * 10000;
+      return x - Math.floor(x);
+    };
+
     const pos = new Float32Array(particleCount * 3);
     const cols = new Float32Array(particleCount * 3);
     const colorInside = new THREE.Color(insideColor);
     const colorOutside = new THREE.Color(outsideColor);
 
     for (let i = 0; i < particleCount; i++) {
-      const r = Math.random() * radius;
+      const r = seededRandom() * radius;
       const branchAngle = ((i % branches) / branches) * Math.PI * 2;
       const spinAngle = r * spin;
 
-      const randomX = Math.pow(Math.random(), power) * (Math.random() < 0.5 ? 1 : -1) * randomness * r;
-      const randomY = Math.pow(Math.random(), power) * (Math.random() < 0.5 ? 1 : -1) * randomness * r;
-      const randomZ = Math.pow(Math.random(), power) * (Math.random() < 0.5 ? 1 : -1) * randomness * r;
+      const randomX = Math.pow(seededRandom(), power) * (seededRandom() < 0.5 ? 1 : -1) * randomness * r;
+      const randomY = Math.pow(seededRandom(), power) * (seededRandom() < 0.5 ? 1 : -1) * randomness * r;
+      const randomZ = Math.pow(seededRandom(), power) * (seededRandom() < 0.5 ? 1 : -1) * randomness * r;
 
       const x = Math.cos(branchAngle + spinAngle) * r + randomX;
       const z = Math.sin(branchAngle + spinAngle) * r + randomZ;
@@ -154,7 +161,7 @@ const InteractiveStar: React.FC<InteractiveStarProps> = ({ memoryStar, onSelect,
   });
 
   // Handle clicking a star - animate camera position towards it and trigger callback
-  const handleClick = (e: any) => {
+  const handleClick = (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
     onSelect(memoryStar.memory);
   };

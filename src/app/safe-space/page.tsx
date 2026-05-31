@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -48,24 +48,25 @@ export default function SafeSpacePage() {
   }, [user, profile, loading, router]);
 
   // Check if vault has pin initialized
-  const checkVaultStatus = async () => {
+  const checkVaultStatus = useCallback(async () => {
     if (!profile?.couple_id) return;
     const exists = await db.hasSafeSpacePin(profile.couple_id);
     setHasPin(exists);
-  };
+  }, [profile]);
 
   useEffect(() => {
     if (profile?.couple_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       checkVaultStatus();
     }
-  }, [profile?.couple_id]);
+  }, [profile?.couple_id, checkVaultStatus]);
 
   // Load private vault notes from localStorage (encrypted/hidden vault emulation)
-  const loadSecretNotes = () => {
+  const loadSecretNotes = useCallback(() => {
     if (!profile?.couple_id) return;
     const data = localStorage.getItem(`safe_space_notes_${profile.couple_id}`);
     setSecretNotes(data ? JSON.parse(data) : []);
-  };
+  }, [profile]);
 
   const handleKeyPress = (num: string) => {
     setErrorMsg('');
@@ -83,7 +84,7 @@ export default function SafeSpacePage() {
   };
 
   // Setup vault pin code
-  const handleSetupPin = async () => {
+  const handleSetupPin = useCallback(async () => {
     if (pin.length !== 4) {
       setErrorMsg('Pin code must be exactly 4 digits.');
       return;
@@ -116,10 +117,10 @@ export default function SafeSpacePage() {
         setErrorMsg('Failed to initialize vault.');
       }
     }
-  };
+  }, [pin, confirmPin, isSettingPin, profile, loadSecretNotes]);
 
   // Verify vault pin code
-  const handleUnlockVault = async () => {
+  const handleUnlockVault = useCallback(async () => {
     if (!profile?.couple_id || pin.length !== 4) return;
     try {
       const match = await db.checkSafeSpacePin(profile.couple_id, pin);
@@ -134,17 +135,18 @@ export default function SafeSpacePage() {
     } catch (err) {
       setErrorMsg('Encryption service unavailable.');
     }
-  };
+  }, [profile, pin, loadSecretNotes]);
 
   useEffect(() => {
     if (pin.length === 4) {
       if (hasPin) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         handleUnlockVault();
       } else {
         handleSetupPin();
       }
     }
-  }, [pin]);
+  }, [pin, hasPin, handleUnlockVault, handleSetupPin]);
 
   const handleCreateSecretNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -399,7 +401,7 @@ export default function SafeSpacePage() {
 
                 {secretNotes.length === 0 && !showForm && (
                   <div className="md:col-span-2 glass p-12 text-center text-xs text-slate-500 rounded-2xl border border-white/5">
-                    Your secret vault is empty. Click "Write Private Memo" to encrypt a note!
+                    Your secret vault is empty. Click &quot;Write Private Memo&quot; to encrypt a note!
                   </div>
                 )}
               </div>

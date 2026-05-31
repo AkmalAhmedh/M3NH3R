@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -42,17 +42,16 @@ export default function SandboxPage() {
     }
   }, [user, profile, loading, router]);
 
-  const loadCards = async () => {
+  const loadCards = useCallback(async () => {
     if (!profile?.couple_id) return;
     const items = await db.getSandboxCards(profile.couple_id);
     setCards(items);
-  };
+  }, [profile]);
 
   useEffect(() => {
-    if (profile?.couple_id) {
-      loadCards();
-    }
-  }, [profile?.couple_id]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadCards();
+  }, [loadCards]);
 
   const handleCreateCard = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -345,7 +344,7 @@ export default function SandboxPage() {
                 <Star className="w-4 h-4 fill-brand-cyan animate-pulse" /> Unlock Core Memory Card
               </h2>
               <p className="text-[10px] text-slate-400 mb-4 leading-relaxed uppercase">
-                "{completeOpen.title}" becomes a permanent star memory. Attach details:
+                &quot;{completeOpen.title}&quot; becomes a permanent star memory. Attach details:
               </p>
 
               <form onSubmit={handleSaveCoreMemory} className="space-y-4">

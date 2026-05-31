@@ -582,7 +582,7 @@ export const db = {
     }
   },
 
-  createSandboxCard: async (coupleId: string, title: string, status: SandboxCard['status'], category: string, metadata: any): Promise<SandboxCard> => {
+  createSandboxCard: async (coupleId: string, title: string, status: SandboxCard['status'], category: string, metadata: SandboxCard['metadata']): Promise<SandboxCard> => {
     if (IS_SUPABASE_CONNECTED) {
       const { data, error } = await supabase
         .from('sandbox_cards')
@@ -608,12 +608,12 @@ export const db = {
     }
   },
 
-  updateSandboxCardStatus: async (cardId: string, status: SandboxCard['status'], metadataUpdates?: any): Promise<SandboxCard> => {
+  updateSandboxCardStatus: async (cardId: string, status: SandboxCard['status'], metadataUpdates?: Partial<SandboxCard['metadata']>): Promise<SandboxCard> => {
     if (IS_SUPABASE_CONNECTED) {
       // If moving to Core Memories, we check if metadata updates are provided
-      const updates: any = { status };
+      const updates: { status: SandboxCard['status']; metadata?: SandboxCard['metadata'] } = { status };
       if (metadataUpdates) {
-        updates.metadata = metadataUpdates;
+        updates.metadata = metadataUpdates as SandboxCard['metadata'];
       }
       const { data, error } = await supabase
         .from('sandbox_cards')
@@ -631,7 +631,7 @@ export const db = {
           'system', // system created on move
           data.title, 
           data.metadata.notes || 'Moved from Wishlist into Core Memories!', 
-          (data.category as any) || 'Personal', 
+          (data.category as Memory['category']) || 'Personal', 
           data.metadata.date || new Date().toISOString().split('T')[0],
           paths
         );
@@ -641,7 +641,7 @@ export const db = {
     } else {
       const oldCard = LocalDB.get<SandboxCard>('sandbox_cards').find(c => c.id === cardId);
       const metadata = oldCard ? { ...oldCard.metadata, ...metadataUpdates } : (metadataUpdates || {});
-      const updated = LocalDB.update<SandboxCard>('sandbox_cards', cardId, { status, metadata, updated_at: new Date().toISOString() });
+      const updated = LocalDB.update<SandboxCard>('sandbox_cards', cardId, { status, metadata: metadata as SandboxCard['metadata'], updated_at: new Date().toISOString() });
       
       if (updated && status === 'core_memories') {
         const paths = updated.metadata.photoUrl ? [{ path: updated.metadata.photoUrl, type: 'image' as const }] : [];
@@ -650,7 +650,7 @@ export const db = {
           'system',
           updated.title,
           updated.metadata.notes || 'Moved from Wishlist into Core Memories!',
-          (updated.category as any) || 'Personal',
+          (updated.category as Memory['category']) || 'Personal',
           updated.metadata.date || new Date().toISOString().split('T')[0],
           paths
         );
@@ -730,7 +730,7 @@ export const db = {
     }
   },
 
-  saveDrawing: async (coupleId: string, userId: string, name: string, canvasData: any, thumbnailUrl?: string, isPinned = false): Promise<Drawing> => {
+  saveDrawing: async (coupleId: string, userId: string, name: string, canvasData: unknown, thumbnailUrl?: string, isPinned = false): Promise<Drawing> => {
     if (IS_SUPABASE_CONNECTED) {
       const { data, error } = await supabase
         .from('drawings')
@@ -774,7 +774,7 @@ export const db = {
   // --- Trackers: Popcorn, Games, Locations ---
   getMovies: async (coupleId: string): Promise<Movie[]> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase.from('movies').select('*').eq('couple_id', coupleId).order('watched_at', { ascending: false });
+      const { data } = await supabase.from('movies').select('*').eq('couple_id', coupleId).order('watched_at', { ascending: false });
       return data || [];
     } else {
       return LocalDB.get<Movie>('movies').filter(m => m.couple_id === coupleId).sort((a,b) => new Date(b.watched_at).getTime() - new Date(a.watched_at).getTime());
@@ -811,7 +811,7 @@ export const db = {
 
   getGames: async (coupleId: string): Promise<Game[]> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase.from('games').select('*').eq('couple_id', coupleId).order('played_at', { ascending: false });
+      const { data } = await supabase.from('games').select('*').eq('couple_id', coupleId).order('played_at', { ascending: false });
       return data || [];
     } else {
       return LocalDB.get<Game>('games').filter(g => g.couple_id === coupleId).sort((a,b) => new Date(b.played_at).getTime() - new Date(a.played_at).getTime());
@@ -845,7 +845,7 @@ export const db = {
 
   getLocations: async (coupleId: string): Promise<LocationLog[]> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase.from('locations').select('*').eq('couple_id', coupleId).order('visited_at', { ascending: false });
+      const { data } = await supabase.from('locations').select('*').eq('couple_id', coupleId).order('visited_at', { ascending: false });
       return data || [];
     } else {
       return LocalDB.get<LocationLog>('locations').filter(l => l.couple_id === coupleId).sort((a,b) => new Date(b.visited_at).getTime() - new Date(a.visited_at).getTime());
@@ -899,7 +899,7 @@ export const db = {
 
   hasSafeSpacePin: async (coupleId: string): Promise<boolean> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('safe_space')
         .select('id')
         .eq('couple_id', coupleId)
@@ -932,7 +932,7 @@ export const db = {
   // --- Shared Journal ---
   getJournals: async (coupleId: string): Promise<JournalEntry[]> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('journals')
         .select('*')
         .eq('couple_id', coupleId)
@@ -972,7 +972,7 @@ export const db = {
   // --- Voice Capsules ---
   getVoiceCapsules: async (coupleId: string): Promise<VoiceCapsule[]> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('voice_capsules')
         .select('*')
         .eq('couple_id', coupleId)
@@ -1096,7 +1096,7 @@ export const db = {
   // --- Notifications ---
   getNotifications: async (coupleId: string, userId: string): Promise<AppNotification[]> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('notifications')
         .select('*')
         .eq('couple_id', coupleId)
@@ -1130,7 +1130,7 @@ export const db = {
   // --- Achievements Checker ---
   getAchievements: async (coupleId: string): Promise<Achievement[]> => {
     if (IS_SUPABASE_CONNECTED) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('achievements')
         .select('*')
         .eq('couple_id', coupleId)

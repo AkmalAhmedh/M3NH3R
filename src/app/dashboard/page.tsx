@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -64,7 +64,7 @@ export default function DashboardPage() {
   }, [user, profile, loading, router]);
 
   // Load dashboard widgets data
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     if (!profile?.couple_id) return;
     try {
       const mems = await db.getMemories(profile.couple_id);
@@ -83,13 +83,14 @@ export default function DashboardPage() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [profile]);
 
   useEffect(() => {
     if (profile?.couple_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadDashboardData();
     }
-  }, [profile?.couple_id, profile?.id]);
+  }, [profile, loadDashboardData]);
 
   // Refresh real-time triggers for dashboard items
   useEffect(() => {

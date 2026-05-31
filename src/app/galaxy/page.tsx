@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Compass, Plus, X, Calendar, Image as ImageIcon, MapPin, Tag } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
@@ -36,17 +36,18 @@ export default function GalaxyPage() {
     }
   }, [user, profile, loading, router]);
 
-  const loadMemories = async () => {
+  const loadMemories = useCallback(async () => {
     if (!profile?.couple_id) return;
     const mems = await db.getMemories(profile.couple_id);
     setMemories(mems);
-  };
+  }, [profile]);
 
   useEffect(() => {
     if (profile?.couple_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadMemories();
     }
-  }, [profile?.couple_id]);
+  }, [profile, loadMemories]);
 
   const handleCreateMemory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,7 +206,7 @@ export default function GalaxyPage() {
                     <label className="block text-[10px] uppercase text-slate-400 tracking-wider mb-1">Category</label>
                     <select
                       value={category}
-                      onChange={(e) => setCategory(e.target.value as any)}
+                      onChange={(e) => setCategory(e.target.value as Memory['category'])}
                       className="w-full py-2 px-3 glass-input text-xs bg-slate-900"
                     >
                       <option value="Date">Date</option>

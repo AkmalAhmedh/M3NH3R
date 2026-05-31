@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -61,12 +61,25 @@ export default function CanvasPage() {
     }
   }, [user, profile, loading, router]);
 
-  // Handle redraw of canvas whenever lines or bgUrl changes
-  useEffect(() => {
-    drawCanvas();
-  }, [lines, bgUrl]);
+  const drawLines = useCallback((ctx: CanvasRenderingContext2D) => {
+    lines.forEach((line) => {
+      if (line.points.length < 2) return;
+      ctx.beginPath();
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth = line.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
 
-  const drawCanvas = () => {
+      ctx.moveTo(line.points[0].x, line.points[0].y);
+      for (let i = 1; i < line.points.length; i++) {
+        ctx.moveTo(line.points[i - 1].x, line.points[i - 1].y);
+        ctx.lineTo(line.points[i].x, line.points[i].y);
+      }
+      ctx.stroke();
+    });
+  }, [lines]);
+
+  const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -95,25 +108,12 @@ export default function CanvasPage() {
     } else {
       drawLines(ctx);
     }
-  };
+  }, [bgUrl, drawLines]);
 
-  const drawLines = (ctx: CanvasRenderingContext2D) => {
-    lines.forEach((line) => {
-      if (line.points.length < 2) return;
-      ctx.beginPath();
-      ctx.strokeStyle = line.color;
-      ctx.lineWidth = line.width;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      ctx.moveTo(line.points[0].x, line.points[0].y);
-      for (let i = 1; i < line.points.length; i++) {
-        ctx.moveTo(line.points[i - 1].x, line.points[i - 1].y);
-        ctx.lineTo(line.points[i].x, line.points[i].y);
-      }
-      ctx.stroke();
-    });
-  };
+  // Handle redraw of canvas whenever lines or bgUrl changes
+  useEffect(() => {
+    drawCanvas();
+  }, [drawCanvas]);
 
   // Adjust canvas size to parent container
   useEffect(() => {
@@ -129,12 +129,13 @@ export default function CanvasPage() {
 
     window.addEventListener('resize', handleResize);
     // Call initial sizing
-    setTimeout(handleResize, 100);
+    const timer = setTimeout(handleResize, 100);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
     };
-  }, [containerRef.current, bgUrl]);
+  }, [bgUrl, drawCanvas]);
 
   // Real-time Collaboration Channel using Supabase Broadcast
   useEffect(() => {

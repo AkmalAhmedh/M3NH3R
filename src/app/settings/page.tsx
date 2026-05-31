@@ -49,22 +49,22 @@ export default function SettingsPage() {
     }
   }, [user, profile, loading, router]);
 
-  const loadSettingsData = async () => {
-    if (!profile?.couple_id) return;
-    try {
-      const wantItems = await db.getWants(profile.couple_id);
-      setWants(wantItems);
-      const req = await db.getBreakupRequest(profile.couple_id);
-      setActiveBreakup(req);
-      if (couple?.anniversary_date) {
-        setAnnDate(couple.anniversary_date);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   useEffect(() => {
+    const loadSettingsData = async () => {
+      if (!profile?.couple_id) return;
+      try {
+        const wantItems = await db.getWants(profile.couple_id);
+        setWants(wantItems);
+        const req = await db.getBreakupRequest(profile.couple_id);
+        setActiveBreakup(req);
+        if (couple?.anniversary_date) {
+          setAnnDate(couple.anniversary_date);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
     if (profile?.couple_id) {
       loadSettingsData();
     }
@@ -89,7 +89,7 @@ export default function SettingsPage() {
     setWantsLoading(true);
 
     try {
-      const added = await db.addWant(profile.couple_id, profile.id, newWant, wantCategory as any, isSensitive);
+      const added = await db.addWant(profile.couple_id, profile.id, newWant, wantCategory as Want['category'], isSensitive);
       setWants((prev) => [...prev, added]);
       setNewWant('');
       setIsSensitive(false);
