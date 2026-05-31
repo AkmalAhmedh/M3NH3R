@@ -3,14 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, Sparkles, Volume2, VolumeX, Moon, UserPlus, LogIn, Compass, ShieldAlert } from 'lucide-react';
+import { Mail, Lock, Sparkles, Volume2, VolumeX, Moon, UserPlus, LogIn, ShieldAlert } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/lib/supabaseClient';
-import { Profile } from '@/types';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, isDemo, loading } = useApp();
+  const { user, loading } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,12 +20,6 @@ export default function LoginPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [isForcedDemo] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('universe_force_demo') === 'true';
-    }
-    return false;
-  });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -132,56 +125,11 @@ export default function LoginPage() {
     }
   };
 
-  const handleDemoLogin = async () => {
-    setFormLoading(true);
-    // Simulate interactive login
-    const demoUser = {
-      id: `user-${Math.floor(1000 + Math.random() * 9000)}`,
-      email: 'cosmic@universe.love',
-      username: username || 'StarGazer'
-    };
-
-    // Save profile to local storage profiles list
-    const profiles = JSON.parse(localStorage.getItem('universe_db_profiles') || '[]');
-    const existing = profiles.find((p: Profile) => p.email === demoUser.email);
-    if (!existing) {
-      profiles.push({
-        id: demoUser.id,
-        couple_id: null,
-        email: demoUser.email,
-        username: demoUser.username,
-        avatar_url: null,
-        mood: 'Affectionate',
-        mood_emoji: '🥰',
-        last_active_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-      localStorage.setItem('universe_db_profiles', JSON.stringify(profiles));
-    } else {
-      demoUser.id = existing.id;
-    }
-
-    localStorage.setItem('universe_session_user', JSON.stringify(demoUser));
-    
-    // Smooth transition simulation
-    setTimeout(() => {
-      setFormLoading(false);
-      window.location.href = '/onboarding';
-    }, 1500);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setInfoMsg('');
     setFormLoading(true);
-
-    if (isDemo) {
-      // Demo authentication helper
-      handleDemoLogin();
-      return;
-    }
 
     try {
       if (isSignUp) {
@@ -347,23 +295,13 @@ export default function LoginPage() {
                   <ShieldAlert className="w-4 h-4" /> Connection timeout detected
                 </div>
                 <p className="text-slate-400 text-[10px] leading-relaxed">
-                  Your browser is waiting for the Supabase server. Check your internet connection or verify your Supabase settings. You can switch to Offline Demo mode to skip the server.
+                  Your browser is waiting for the Supabase server. Check your internet connection or verify your Supabase settings.
                 </p>
                 <div className="flex gap-2 pt-0.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      localStorage.setItem('universe_force_demo', 'true');
-                      window.location.reload();
-                    }}
-                    className="flex-1 py-1.5 px-2 bg-brand-cyan/20 border border-brand-cyan/30 text-brand-cyan rounded-lg hover:bg-brand-cyan/30 transition cursor-pointer text-center font-bold text-[10px]"
-                  >
-                    Switch to Offline Mode
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setFormLoading(false)}
-                    className="py-1.5 px-2 bg-slate-800 rounded-lg hover:bg-slate-700 text-slate-300 transition cursor-pointer text-center font-semibold text-[10px]"
+                    className="flex-1 py-1.5 px-2 bg-slate-800 rounded-lg hover:bg-slate-700 text-slate-300 transition cursor-pointer text-center font-semibold text-[10px]"
                   >
                     Stop Loader
                   </button>
@@ -390,19 +328,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {isDemo && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                disabled={formLoading}
-                className="w-full py-2.5 bg-brand-cyan/20 border border-brand-cyan/40 hover:bg-brand-cyan/30 text-brand-cyan rounded-lg font-medium transition duration-300 text-xs flex justify-center items-center gap-2 cursor-pointer"
-              >
-                <Compass className="w-4 h-4 animate-spin-slow" /> Quick Guest Demo Login
-              </button>
-            </div>
-          )}
-
           <div className="mt-6 flex justify-between text-xs text-slate-400">
             <button
               onClick={() => setIsSignUp(!isSignUp)}
@@ -411,22 +336,6 @@ export default function LoginPage() {
               {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
             </button>
           </div>
-
-          {isForcedDemo && (
-            <div className="mt-4 pt-3 border-t border-white/5 text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Running in Offline Mode (LocalStorage)</span>
-              <button
-                type="button"
-                onClick={() => {
-                  localStorage.removeItem('universe_force_demo');
-                  window.location.reload();
-                }}
-                className="text-brand-cyan hover:underline font-semibold cursor-pointer"
-              >
-                Switch to Supabase
-              </button>
-            </div>
-          )}
         </motion.div>
       </AnimatePresence>
       <div className="absolute bottom-6 z-10 text-xs text-slate-500">

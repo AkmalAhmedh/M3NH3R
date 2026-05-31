@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { db, initLocalDB } from '../lib/db';
+import { db } from '../lib/db';
 import { Profile, Couple } from '../types';
 import { User } from '@supabase/supabase-js';
 
@@ -12,7 +12,6 @@ interface AppContextType {
   partnerProfile: Profile | null;
   couple: Couple | null;
   loading: boolean;
-  isDemo: boolean;
   refreshState: () => Promise<void>;
   logOut: () => Promise<void>;
   updateMood: (mood: string, emoji: string) => Promise<void>;
@@ -21,32 +20,11 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== 'undefined') {
-      const savedUser = localStorage.getItem('universe_session_user');
-      if (savedUser) {
-        try {
-          return JSON.parse(savedUser) as User;
-        } catch {
-          return null;
-        }
-      }
-    }
-    return null;
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [partnerProfile, setPartnerProfile] = useState<Profile | null>(null);
   const [couple, setCouple] = useState<Couple | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isDemo] = useState(() => {
-    if (typeof window !== 'undefined') {
-      if (localStorage.getItem('universe_force_demo') === 'true') {
-        return true;
-      }
-    }
-    const effectiveSupabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    return !(!!effectiveSupabaseUrl && effectiveSupabaseUrl !== 'https://placeholder-url-for-build.supabase.co');
-  });
 
   const fetchProfileAndCouple = async (userId: string, userEmail?: string) => {
     try {
@@ -100,11 +78,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logOut = async () => {
     setLoading(true);
-    if (!isDemo) {
-      await supabase.auth.signOut();
-    } else {
-      localStorage.removeItem('universe_session_user');
-    }
+    await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
     setPartnerProfile(null);
@@ -113,51 +87,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   useEffect(() => {
-    // Initialise Local Storage DB fallback
-    initLocalDB();
-
-    if (!isDemo) {
-      // 1. Supabase Session Listener
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          setUser(session.user);
-          fetchProfileAndCouple(session.user.id, session.user.email).then(() => setLoading(false));
-        } else {
-          setUser(null);
-          setLoading(false);
-        }
-      });
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session) {
-          setUser(session.user);
-          await fetchProfileAndCouple(session.user.id, session.user.email);
-        } else {
-          setUser(null);
-          setProfile(null);
-          setPartnerProfile(null);
-          setCouple(null);
-        }
-        setLoading(false);
-      });
-
-      return () => {
-        subscription.unsubscribe();
-      };
-    } else {
-      // 2. Demo Local Storage Session listener
-      if (user) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        fetchProfileAndCouple(user.id).then(() => setLoading(false));
+    // 1. Supabase Session Listener
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setUser(session.user);
+        fetchProfileAndCouple(session.user.id, session.user.email).then(() => setLoading(false));
       } else {
+        setUser(null);
         setLoading(false);
       }
-    }
-  }, [isDemo, user]);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        setUser(session.user);
+        await fetchProfileAndCouple(session.user.id, session.user.email);
+      } else {
+        setUser(null);
+        setProfile(null);
+        setPartnerProfile(null);
+        setCouple(null);
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Listen to updates on the current user's profile to detect when they are linked by their partner
   useEffect(() => {
-    if (isDemo || !user?.id) return;
+    if (!user?.id) return;
 
     const channel = supabase
       .channel(`user-profile-sync-${user.id}`)
@@ -181,11 +142,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, isDemo]);
+  }, [user?.id]);
 
   // Real-time synchronization subscription for profiles/notifications
   useEffect(() => {
-    if (isDemo || !profile?.couple_id) return;
+    if (!profile?.couple_id) return;
 
     // Realtime channel for couple-level updates (moods, active partner)
     const channel = supabase
@@ -208,7 +169,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.couple_id, profile?.id, isDemo]);
+  }, [profile?.couple_id, profile?.id]);
 
   return (
     <AppContext.Provider value={{
@@ -217,7 +178,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       partnerProfile,
       couple,
       loading,
-      isDemo,
       refreshState,
       logOut,
       updateMood

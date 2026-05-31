@@ -38,7 +38,7 @@ const DATE_IDEAS = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, profile, partnerProfile, couple, loading, updateMood, isDemo } = useApp();
+  const { user, profile, partnerProfile, couple, loading, updateMood } = useApp();
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
@@ -91,7 +91,7 @@ export default function DashboardPage() {
 
   // Refresh real-time triggers for dashboard items
   useEffect(() => {
-    if (isDemo || !profile?.couple_id) return;
+    if (!profile?.couple_id) return;
 
     // Listen to changes on memories, drawings, notifications
     const channel = supabase
@@ -104,7 +104,7 @@ export default function DashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.couple_id, isDemo, loadDashboardData]);
+  }, [profile?.couple_id, loadDashboardData]);
 
   // Calculate Days Together
   const getDaysTogether = () => {

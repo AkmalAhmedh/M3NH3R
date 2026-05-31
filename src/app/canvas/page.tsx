@@ -27,7 +27,7 @@ interface PartnerCursor {
 
 export default function CanvasPage() {
   const router = useRouter();
-  const { user, profile, loading, isDemo } = useApp();
+  const { user, profile, loading } = useApp();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -139,7 +139,7 @@ export default function CanvasPage() {
 
   // Real-time Collaboration Channel using Supabase Broadcast
   useEffect(() => {
-    if (isDemo || !profile?.couple_id) return;
+    if (!profile?.couple_id) return;
 
     const channel = supabase.channel(`canvas-${profile.couple_id}`, {
       config: {
@@ -163,7 +163,7 @@ export default function CanvasPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.couple_id, isDemo]);
+  }, [profile?.couple_id]);
 
   // Mouse / Pointer Event Listeners
   const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -193,19 +193,17 @@ export default function CanvasPage() {
     const coords = getCoordinates(e);
 
     // 1. Broadcast cursor position to partner in real-time
-    if (!isDemo) {
-      const channel = supabase.channel(`canvas-${profile.couple_id}`);
-      channel.send({
-        type: 'broadcast',
-        event: 'cursor_move',
-        payload: {
-          userId: profile.id,
-          username: profile.username,
-          x: coords.x,
-          y: coords.y
-        }
-      });
-    }
+    const channel = supabase.channel(`canvas-${profile.couple_id}`);
+    channel.send({
+      type: 'broadcast',
+      event: 'cursor_move',
+      payload: {
+        userId: profile.id,
+        username: profile.username,
+        x: coords.x,
+        y: coords.y
+      }
+    });
 
     // 2. Perform drawing
     if (!isDrawing || !currentLine) return;
@@ -219,14 +217,11 @@ export default function CanvasPage() {
     setLines(updatedLines);
 
     // 3. Broadcast stroke database in real-time
-    if (!isDemo) {
-      const channel = supabase.channel(`canvas-${profile.couple_id}`);
-      channel.send({
-        type: 'broadcast',
-        event: 'draw_stroke',
-        payload: { lines: updatedLines }
-      });
-    }
+    channel.send({
+      type: 'broadcast',
+      event: 'draw_stroke',
+      payload: { lines: updatedLines }
+    });
   };
 
   const handlePointerUp = () => {
@@ -239,14 +234,12 @@ export default function CanvasPage() {
     setLines([]);
     setBgUrl('');
 
-    if (!isDemo) {
-      const channel = supabase.channel(`canvas-${profile.couple_id}`);
-      channel.send({
-        type: 'broadcast',
-        event: 'clear_canvas',
-        payload: {}
-      });
-    }
+    const channel = supabase.channel(`canvas-${profile.couple_id}`);
+    channel.send({
+      type: 'broadcast',
+      event: 'clear_canvas',
+      payload: {}
+    });
   };
 
   const handleApplyBackground = () => {
@@ -269,15 +262,13 @@ export default function CanvasPage() {
       await db.saveDrawing(profile.couple_id, profile.id, drawingName, lines, imgDataUrl, true);
       
       // Also notify partner
-      if (!isDemo) {
-        await supabase.from('notifications').insert({
-          couple_id: profile.couple_id,
-          recipient_id: partnerCursor?.userId || profile.id, // Fallback to issuer if partner offline
-          sender_id: profile.id,
-          type: 'doodle',
-          message: `${profile.username} pinned a brand new doodle to the Refrigerator Door!`
-        });
-      }
+      await supabase.from('notifications').insert({
+        couple_id: profile.couple_id,
+        recipient_id: partnerCursor?.userId || profile.id, // Fallback to issuer if partner offline
+        sender_id: profile.id,
+        type: 'doodle',
+        message: `${profile.username} pinned a brand new doodle to the Refrigerator Door!`
+      });
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
