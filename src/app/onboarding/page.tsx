@@ -62,6 +62,13 @@ export default function OnboardingPage() {
     }
   }, [sentRequest, myInvite]);
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login');
+    }
+  }, [user, loading, router]);
+
   // Redirect to dashboard if already linked
   useEffect(() => {
     if (!loading && user && profile?.couple_id && !successLinked) {
