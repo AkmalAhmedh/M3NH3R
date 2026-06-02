@@ -36,6 +36,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           myProfile = await db.createProfile(userId, userEmail);
         } catch (createErr) {
           console.error('Error creating profile:', createErr);
+          // Profile creation failed - this is a critical error
+          // The profile fetch should also fail in this case since no profile exists
+          setProfile(null);
+          return;
         }
       }
       
@@ -50,9 +54,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCouple(null);
           setPartnerProfile(null);
         }
+      } else {
+        // No profile found and couldn't create one
+        setProfile(null);
+        setCouple(null);
+        setPartnerProfile(null);
       }
     } catch (err) {
       console.error('Error fetching profile and couple info:', err);
+      setProfile(null);
+      setCouple(null);
+      setPartnerProfile(null);
     }
   }, []);
 
