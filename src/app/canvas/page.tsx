@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/ui/Navbar';
 
 interface Line {
+  id: string;
   points: { x: number; y: number }[];
   color: string;
   width: number;
@@ -43,13 +44,15 @@ export default function CanvasPage() {
 
   // Drawing paths history
   const [lines, setLines] = useState<Line[]>([]);
-  const [currentLine, setCurrentLine] = useState<Line | null>(null);
+  const currentLineRef = useRef<Line | null>(null);
 
   // Real-time Partner cursor coordinates
   const [partnerCursor, setPartnerCursor] = useState<PartnerCursor | null>(null);
   const [savingDrawing, setSavingDrawing] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [drawingName, setDrawingName] = useState('Our Masterpiece');
+
+  const lastBroadcastTime = useRef<number>(0);
 
   useEffect(() => {
     if (!loading) {
@@ -131,27 +134,13 @@ export default function CanvasPage() {
     drawCanvas();
   }, [drawCanvas]);
 
-  // Adjust canvas size to parent container
+  // Initial scroll position for massive canvas
   useEffect(() => {
-    const handleResize = () => {
-      const canvas = canvasRef.current;
-      const container = containerRef.current;
-      if (!canvas || !container) return;
-
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight || 500;
-      drawCanvas();
-    };
-
-    window.addEventListener('resize', handleResize);
-    // Call initial sizing
-    const timer = setTimeout(handleResize, 100);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      clearTimeout(timer);
-    };
-  }, [bgImage, drawCanvas]);
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 2000 - containerRef.current.clientHeight / 2;
+      containerRef.current.scrollLeft = 2000 - containerRef.current.clientWidth / 2;
+    }
+  }, []);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -170,7 +159,16 @@ export default function CanvasPage() {
         setPartnerCursor(payload);
       })
       .on('broadcast', { event: 'draw_stroke' }, ({ payload }) => {
-        setLines(payload.lines);
+        setLines(prev => {
+          const idx = prev.findIndex(l => l.id === payload.line.id);
+          if (idx >= 0) {
+            const newLines = [...prev];
+            newLines[idx] = payload.line;
+            return newLines;
+          } else {
+            return [...prev, payload.line];
+          }
+        });
       })
       .on('broadcast', { event: 'clear_canvas' }, () => {
         setLines([]);
@@ -198,14 +196,16 @@ export default function CanvasPage() {
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId); // Prevent scroll hijacking on mobile
     setIsDrawing(true);
     const coords = getCoordinates(e);
     const newLine: Line = {
+      id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
       points: [coords],
       color: tool === 'eraser' ? '#090d16' : color, // Erase with background canvas color
       width: lineWidth
     };
-    setCurrentLine(newLine);
+    currentLineRef.current = newLine;
     setLines((prev) => [...prev, newLine]);
   };
 
@@ -214,44 +214,82 @@ export default function CanvasPage() {
     const coords = getCoordinates(e);
     const channel = channelRef.current;
 
-    // 1. Broadcast cursor position to partner in real-time
-    if (channel) {
-      channel.send({
-        type: 'broadcast',
-        event: 'cursor_move',
-        payload: {
-          userId: profile.id,
-          username: profile.username,
-          x: coords.x,
-          y: coords.y
-        }
-      });
+    // 2. Perform drawing
+    if (!isDrawing || !currentLineRef.current) {
+      // Even if not drawing, we can still broadcast cursor position throttled
+      const now = Date.now();
+      if (now - lastBroadcastTime.current > 50 && channel) {
+        channel.send({
+          type: 'broadcast',
+          event: 'cursor_move',
+          payload: {
+            userId: profile.id,
+            username: profile.username,
+            x: coords.x,
+            y: coords.y
+          }
+        });
+        lastBroadcastTime.current = now;
+      }
+      return;
     }
 
-    // 2. Perform drawing
-    if (!isDrawing || !currentLine) return;
-
+    const currentLine = currentLineRef.current;
     const updatedPoints = [...currentLine.points, coords];
     const updatedLine = { ...currentLine, points: updatedPoints };
-    setCurrentLine(updatedLine);
+    currentLineRef.current = updatedLine; // Update ref immediately
 
-    const updatedLines = [...lines];
-    updatedLines[updatedLines.length - 1] = updatedLine;
-    setLines(updatedLines);
+    // Functional update avoids stale closures clashing with partner broadcasts
+    setLines(prev => {
+      const idx = prev.findIndex(l => l.id === updatedLine.id);
+      if (idx >= 0) {
+        const newLines = [...prev];
+        newLines[idx] = updatedLine;
+        return newLines;
+      }
+      return [...prev, updatedLine];
+    });
 
-    // 3. Broadcast stroke database in real-time
-    if (channel) {
-      channel.send({
-        type: 'broadcast',
-        event: 'draw_stroke',
-        payload: { lines: updatedLines }
-      });
+    // Throttle realtime broadcasting to 20fps (every 50ms) to prevent Supabase rate-limits & lag
+    const now = Date.now();
+    if (now - lastBroadcastTime.current > 50) {
+      if (channel) {
+        // 1. Broadcast cursor position
+        channel.send({
+          type: 'broadcast',
+          event: 'cursor_move',
+          payload: {
+            userId: profile.id,
+            username: profile.username,
+            x: coords.x,
+            y: coords.y
+          }
+        });
+
+        // 3. Broadcast active stroke
+        channel.send({
+          type: 'broadcast',
+          event: 'draw_stroke',
+          payload: { line: updatedLine }
+        });
+      }
+      lastBroadcastTime.current = now;
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    // Broadcast final stroke state when lifting pointer
+    if (isDrawing && currentLineRef.current && channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'draw_stroke',
+        payload: { line: currentLineRef.current }
+      });
+    }
+    
     setIsDrawing(false);
-    setCurrentLine(null);
+    currentLineRef.current = null;
   };
 
   const handleClearCanvas = () => {
@@ -283,6 +321,7 @@ export default function CanvasPage() {
     setSaveSuccess(false);
 
     try {
+      // Export current view, or full canvas. We will export the full canvas.
       const imgDataUrl = canvas.toDataURL('image/png');
       
       // Save drawing as pinned doodle to display on Refrigerator Door
@@ -338,14 +377,14 @@ export default function CanvasPage() {
       </header>
 
       {/* Main Canvas Canvas Section */}
-      <main className="max-w-5xl w-full px-6 mt-8 flex flex-col md:flex-row gap-6 z-10 flex-1 min-h-[500px]">
+      <main className="max-w-[95vw] w-full mt-8 flex flex-col md:flex-row gap-6 z-10 flex-1 min-h-[600px] h-full mx-auto relative">
         {/* Left Toolbar */}
-        <section className="glass p-5 rounded-2xl border border-white/5 flex flex-row md:flex-col justify-around md:justify-start gap-4 md:w-44">
+        <section className="glass p-5 rounded-2xl border border-white/5 flex flex-row md:flex-col justify-around md:justify-start gap-4 md:w-44 shrink-0 shadow-lg">
           
           {/* Brush Colors */}
           <div className="space-y-2">
             <span className="hidden md:block text-[9px] uppercase tracking-wider text-slate-500 font-bold">Palette</span>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               {['#8b5cf6', '#ec4899', '#06b6d4', '#eab308', '#22c55e', '#ef4444', '#ffffff'].map((c) => (
                 <button
                   key={c}
@@ -354,6 +393,14 @@ export default function CanvasPage() {
                   style={{ backgroundColor: c }}
                 />
               ))}
+              <div className={`w-8 h-8 rounded-full overflow-hidden border ml-1 relative transition-all ${tool === 'pencil' && !['#8b5cf6', '#ec4899', '#06b6d4', '#eab308', '#22c55e', '#ef4444', '#ffffff'].includes(color) ? 'scale-110 border-white ring-2 ring-brand-violet/30' : 'border-white/20'}`} title="Custom Color">
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(e) => { setColor(e.target.value); setTool('pencil'); }}
+                  className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer"
+                />
+              </div>
             </div>
           </div>
 
@@ -388,7 +435,7 @@ export default function CanvasPage() {
             <input
               type="range"
               min={2}
-              max={25}
+              max={50}
               value={lineWidth}
               onChange={(e) => setLineWidth(parseInt(e.target.value))}
               className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-violet"
@@ -397,28 +444,32 @@ export default function CanvasPage() {
 
         </section>
 
-        {/* Real Canvas Window */}
-        <section ref={containerRef} className="flex-1 glass rounded-2xl border border-white/5 overflow-hidden relative bg-[#090d16] shadow-inner shadow-black/80 flex items-center justify-center">
-          <canvas
-            ref={canvasRef}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            className="cursor-crosshair w-full h-full touch-none"
-          />
+        {/* Real Canvas Window with scrollable infinite-like pan behavior */}
+        <section ref={containerRef} className="flex-1 glass rounded-2xl border border-white/5 overflow-auto relative bg-[#060910] shadow-inner shadow-black/80">
+          <div className="relative w-[4000px] h-[4000px] bg-[#090d16] shadow-2xl m-8">
+            <canvas
+              ref={canvasRef}
+              width={4000}
+              height={4000}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              className="cursor-crosshair w-full h-full touch-none block"
+            />
 
-          {/* Real-time Partner Live Cursor indicator */}
-          {partnerCursor && (
-            <div
-              className="absolute pointer-events-none transition-all duration-75 flex flex-col items-center"
-              style={{ left: partnerCursor.x, top: partnerCursor.y }}
-            >
-              <MousePointer className="w-4 h-4 text-brand-cyan fill-brand-cyan rotate-90" />
-              <span className="text-[8px] bg-slate-900 border border-brand-cyan text-brand-cyan px-1.5 py-0.5 rounded shadow mt-1">
-                {partnerCursor.username}
-              </span>
-            </div>
-          )}
+            {/* Real-time Partner Live Cursor indicator */}
+            {partnerCursor && (
+              <div
+                className="absolute pointer-events-none transition-all duration-75 flex flex-col items-center z-20"
+                style={{ left: partnerCursor.x, top: partnerCursor.y }}
+              >
+                <MousePointer className="w-4 h-4 text-brand-cyan fill-brand-cyan rotate-90" />
+                <span className="text-[8px] bg-slate-900 border border-brand-cyan text-brand-cyan px-1.5 py-0.5 rounded shadow mt-1">
+                  {partnerCursor.username}
+                </span>
+              </div>
+            )}
+          </div>
         </section>
       </main>
 

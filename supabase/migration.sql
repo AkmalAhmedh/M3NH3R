@@ -96,6 +96,8 @@ begin
 end;
 $$ language plpgsql;
 
+grant execute on function public.request_partner_connection(text) to public;
+
 -- ALTER notifications table to allow null couple_id for connection requests
 alter table public.notifications alter column couple_id drop not null;
 create policy "Users can read their own notifications regardless of couple"
@@ -137,7 +139,7 @@ begin
   end if;
 
   -- Generate shared key
-  new_shared_key := encode(gen_random_bytes(16), 'hex');
+  new_shared_key := md5(random()::text || clock_timestamp()::text);
 
   -- Create couple
   insert into public.couples (name, user1_id, user2_id, status, shared_key, anniversary_date)
@@ -169,6 +171,8 @@ begin
 end;
 $$ language plpgsql;
 
+grant execute on function public.accept_partner_connection(uuid) to public;
+
 -- 8. New RPC: Decline Connection
 create or replace function public.decline_partner_connection(invite_id_input uuid)
 returns jsonb
@@ -199,6 +203,8 @@ begin
   return jsonb_build_object('success', true);
 end;
 $$ language plpgsql;
+
+grant execute on function public.decline_partner_connection(uuid) to public;
 
 -- 9. New RPC: Initiate Breakup
 create or replace function public.initiate_breakup()

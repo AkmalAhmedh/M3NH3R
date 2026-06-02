@@ -156,81 +156,112 @@ export default function JournalPage() {
     e.preventDefault();
     if (!profile?.couple_id || !profile?.id) return;
     setFormLoading(true);
-    await db.addJournal(profile.couple_id, profile.id, jTitle, jContent, jEmoji, jDate);
-    setJTitle('');
-    setJContent('');
-    setModalType(null);
-    await loadData();
-    setFormLoading(false);
+    try {
+      await db.addJournal(profile.couple_id, profile.id, jTitle, jContent, jEmoji, jDate);
+      setJTitle('');
+      setJContent('');
+      setModalType(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save journal entry:', err);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   const handleCreateMovie = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.couple_id) return;
     setFormLoading(true);
-    const poster = mPoster || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=600';
-    await db.addMovie(profile.couple_id, mTitle, mType, mRating, mReview, poster, mDate);
-    setMTitle('');
-    setMReview('');
-    setMPoster('');
-    setModalType(null);
-    await loadData();
-    setFormLoading(false);
+    try {
+      const poster = mPoster || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=600';
+      await db.addMovie(profile.couple_id, mTitle, mType, mRating, mReview, poster, mDate);
+      setMTitle('');
+      setMReview('');
+      setMPoster('');
+      setModalType(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save movie entry:', err);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   const handleCreateGame = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.couple_id) return;
     setFormLoading(true);
-    const ss = gScreenshot || 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?q=80&w=600';
-    await db.addGame(profile.couple_id, gTitle, parseFloat(gHours) || 0, ss, gNotes, gDate);
-    setGTitle('');
-    setGHours('1');
-    setGScreenshot('');
-    setGNotes('');
-    setModalType(null);
-    await loadData();
-    setFormLoading(false);
+    try {
+      const ss = gScreenshot || 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?q=80&w=600';
+      const hoursPlayed = parseFloat(gHours);
+      await db.addGame(profile.couple_id, gTitle, Number.isNaN(hoursPlayed) ? 0 : hoursPlayed, ss, gNotes, gDate);
+      setGTitle('');
+      setGHours('1');
+      setGScreenshot('');
+      setGNotes('');
+      setModalType(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save game entry:', err);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   const handleCreateLocation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.couple_id) return;
     setFormLoading(true);
-    // Emulate location coordinate math offsets
-    const lat = 40.7128 + (Math.random() - 0.5) * 0.1;
-    const lng = -74.0060 + (Math.random() - 0.5) * 0.1;
-    await db.addLocation(profile.couple_id, lName, lType, lat, lng, lNote, lDate);
-    setLName('');
-    setLNote('');
-    setModalType(null);
-    await loadData();
-    setFormLoading(false);
+    try {
+      // Emulate location coordinate math offsets
+      const lat = 40.7128 + (Math.random() - 0.5) * 0.1;
+      const lng = -74.0060 + (Math.random() - 0.5) * 0.1;
+      await db.addLocation(profile.couple_id, lName, lType, lat, lng, lNote, lDate);
+      setLName('');
+      setLNote('');
+      setModalType(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save location entry:', err);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   const handleCreateLoveLetter = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.couple_id || !profile?.id || !partnerProfile?.id) return;
     setFormLoading(true);
-    await db.addLoveLetter(profile.couple_id, profile.id, partnerProfile.id, llContent, llUnlockDate);
-    setLlContent('');
-    setModalType(null);
-    await loadData();
-    setFormLoading(false);
+    try {
+      await db.addLoveLetter(profile.couple_id, profile.id, partnerProfile.id, llContent, llUnlockDate);
+      setLlContent('');
+      setModalType(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save love letter:', err);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   const handleCreateTimeCapsule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.couple_id || !profile?.id) return;
     setFormLoading(true);
-    const assets = tcAssetUrl ? [tcAssetUrl] : [];
-    await db.addTimeCapsule(profile.couple_id, profile.id, tcTitle, tcContent, assets, tcUnlockDate);
-    setTcTitle('');
-    setTcContent('');
-    setTcAssetUrl('');
-    setModalType(null);
-    await loadData();
-    setFormLoading(false);
+    try {
+      const assets = tcAssetUrl ? [tcAssetUrl] : [];
+      await db.addTimeCapsule(profile.couple_id, profile.id, tcTitle, tcContent, assets, tcUnlockDate);
+      setTcTitle('');
+      setTcContent('');
+      setTcAssetUrl('');
+      setModalType(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save time capsule:', err);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   // --- Voice Capturing ---
@@ -277,12 +308,17 @@ export default function JournalPage() {
     e.preventDefault();
     if (!profile?.couple_id || !profile?.id || !recordedUrl) return;
     setFormLoading(true);
-    await db.addVoiceCapsule(profile.couple_id, profile.id, vTitle, recordedUrl, vCategory);
-    setVTitle('');
-    setRecordedUrl(null);
-    setModalType(null);
-    await loadData();
-    setFormLoading(false);
+    try {
+      await db.addVoiceCapsule(profile.couple_id, profile.id, vTitle, recordedUrl, vCategory);
+      setVTitle('');
+      setRecordedUrl(null);
+      setModalType(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save voice capsule:', err);
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   if (loading || !profile) return null;

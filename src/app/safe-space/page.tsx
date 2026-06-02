@@ -179,25 +179,8 @@ export default function SafeSpacePage() {
     localStorage.setItem(`safe_space_notes_${profile.couple_id}`, JSON.stringify(updated));
   };
 
-  if (loading || !profile || hasPin === null) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex justify-center items-center">
-        <div className="text-center space-y-4">
-          <ShieldCheck className="w-10 h-10 text-brand-cyan animate-spin-slow mx-auto" />
-          <p className="text-xs text-slate-400 uppercase tracking-widest font-mono">Warping to Safe Space nodes...</p>
-          <button
-            onClick={async () => {
-              await logOut();
-              router.push('/login');
-            }}
-            className="mt-4 text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer block mx-auto font-mono"
-          >
-            Stuck? Go to Sign In Page
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // We no longer block the entire page render. 
+  // If loading, we show a subtle indicator but render the layout.
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-32 flex flex-col justify-between items-center">

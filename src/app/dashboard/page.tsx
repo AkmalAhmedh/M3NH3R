@@ -62,6 +62,29 @@ export default function DashboardPage() {
     }
   }, [user, profile, loading, router]);
 
+  // Handle multi-mood toggling
+  const handleMoodToggle = (clickedMood: typeof MOOD_OPTIONS[0]) => {
+    if (!profile) return;
+    
+    let currentMoods = profile.mood ? profile.mood.split(', ').filter(Boolean) : [];
+    let currentEmojis = profile.mood_emoji ? profile.mood_emoji.split(', ').filter(Boolean) : [];
+
+    if (currentMoods.includes(clickedMood.label)) {
+      // Remove
+      currentMoods = currentMoods.filter(m => m !== clickedMood.label);
+      currentEmojis = currentEmojis.filter(e => e !== clickedMood.emoji);
+    } else {
+      // Add
+      currentMoods.push(clickedMood.label);
+      currentEmojis.push(clickedMood.emoji);
+    }
+
+    const newMoodString = currentMoods.join(', ');
+    const newEmojiString = currentEmojis.join(', ');
+    
+    updateMood(newMoodString, newEmojiString);
+  };
+
   // Load dashboard widgets data
   const loadDashboardData = useCallback(async () => {
     if (!profile?.couple_id) return;
@@ -160,23 +183,7 @@ export default function DashboardPage() {
   };
 
   if (loading || !profile || !couple) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex justify-center items-center">
-        <div className="text-center space-y-4">
-          <Compass className="w-10 h-10 text-brand-violet animate-spin-slow mx-auto" />
-          <p className="text-xs text-slate-400 uppercase tracking-widest font-mono">Opening Universe command deck...</p>
-          <button
-            onClick={async () => {
-              await logOut();
-              router.push('/login');
-            }}
-            className="mt-4 text-xs text-slate-500 hover:text-slate-300 underline cursor-pointer block mx-auto font-mono"
-          >
-            Stuck? Go to Sign In Page
-          </button>
-        </div>
-      </div>
-    );
+    return null; // Removed blocking spinner to fix UX trapping
   }
 
   return (
@@ -246,11 +253,11 @@ export default function DashboardPage() {
               
               <div className="grid grid-cols-4 gap-3">
                 {MOOD_OPTIONS.map((mood) => {
-                  const isSelected = profile.mood === mood.label;
+                  const isSelected = profile.mood?.includes(mood.label);
                   return (
                     <button
                       key={mood.label}
-                      onClick={() => updateMood(mood.label, mood.emoji)}
+                      onClick={() => handleMoodToggle(mood)}
                       className={`text-2xl p-2.5 rounded-xl transition duration-200 cursor-pointer flex justify-center items-center relative ${
                         isSelected 
                           ? `bg-gradient-to-tr ${mood.color} text-white shadow-lg` 
@@ -285,8 +292,10 @@ export default function DashboardPage() {
               </h2>
               {partnerProfile ? (
                 <div className="flex flex-col items-center justify-center py-6 space-y-3">
-                  <div className="text-6xl animate-float">
-                    {partnerProfile.mood_emoji || '🪐'}
+                  <div className="flex flex-wrap gap-2 justify-center text-5xl animate-float max-w-xs">
+                    {partnerProfile.mood_emoji ? partnerProfile.mood_emoji.split(', ').map((emoji, i) => (
+                      <span key={i}>{emoji}</span>
+                    )) : '🪐'}
                   </div>
                   <div className="text-center">
                     <span className="block text-base font-bold text-slate-200">

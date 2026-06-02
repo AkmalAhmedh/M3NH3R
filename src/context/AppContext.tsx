@@ -90,25 +90,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logOut = async () => {
     setLoading(true);
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-    setPartnerProfile(null);
-    setCouple(null);
-    setLoading(false);
+    try {
+      // Wrap in Promise.race to prevent hanging if realtime channels refuse to close
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((resolve) => setTimeout(resolve, 2000))
+      ]);
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setUser(null);
+      setProfile(null);
+      setPartnerProfile(null);
+      setCouple(null);
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    // Safety timeout to prevent infinite loading screen
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+
     // 1. Supabase Session Listener
     const initializeUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setUser(session.user);
-        await fetchProfileAndCouple(session.user.id, session.user.email);
-      } else {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Auth session fetch failed:', error);
+          await supabase.auth.signOut();
+          setUser(null);
+        } else if (session) {
+          setUser(session.user);
+          await fetchProfileAndCouple(session.user.id, session.user.email);
+        } else {
+          setUser(null);
+        }
+      } catch (err) {
+        console.error('Auth initialization failed:', err);
+        await supabase.auth.signOut();
         setUser(null);
+      } finally {
+        setLoading(false);
+        clearTimeout(safetyTimer);
       }
-      setLoading(false);
     };
 
     initializeUser();
@@ -124,10 +150,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCouple(null);
       }
       setLoading(false);
+      clearTimeout(safetyTimer);
     });
 
     return () => {
       subscription.unsubscribe();
+      clearTimeout(safetyTimer);
     };
   }, [fetchProfileAndCouple]);
 

@@ -145,8 +145,17 @@ export default function OnboardingPage() {
         })
         .subscribe();
 
+      // Robust fallback polling to catch state changes if Realtime is delayed or not enabled
+      const interval = setInterval(() => {
+        fetchInvites();
+        if (hadInviteOrRequest.current) {
+          refreshState();
+        }
+      }, 3000);
+
       return () => {
         supabase.removeChannel(channel);
+        clearInterval(interval);
       };
     }
   }, [user, fetchInvites, refreshState]);

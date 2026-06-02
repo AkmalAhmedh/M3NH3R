@@ -587,6 +587,7 @@ begin
 end;
 $$ language plpgsql;
 
+grant execute on function public.request_partner_connection(text) to public;
 
 -- 22. RPC: Accept Connection
 create or replace function public.accept_partner_connection(invite_id_input uuid)
@@ -619,7 +620,7 @@ begin
   end if;
 
   -- Generate shared key
-  new_shared_key := encode(gen_random_bytes(16), 'hex');
+  new_shared_key := md5(random()::text || clock_timestamp()::text);
 
   -- Create couple
   insert into public.couples (name, user1_id, user2_id, status, shared_key, anniversary_date)
@@ -645,6 +646,7 @@ begin
 end;
 $$ language plpgsql;
 
+grant execute on function public.accept_partner_connection(uuid) to public;
 
 -- 23. RPC: Decline Connection
 create or replace function public.decline_partner_connection(invite_id_input uuid)
@@ -670,6 +672,7 @@ begin
 end;
 $$ language plpgsql;
 
+grant execute on function public.decline_partner_connection(uuid) to public;
 
 -- 24. RPC: Initiate Breakup
 create or replace function public.initiate_breakup()
@@ -733,3 +736,8 @@ create index if not exists idx_love_letters_couple_id on public.love_letters(cou
 create index if not exists idx_time_capsules_couple_id on public.time_capsules(couple_id);
 create index if not exists idx_notifications_couple_id_recipient_id on public.notifications(couple_id, recipient_id);
 create index if not exists idx_achievements_couple_id on public.achievements(couple_id);
+
+-- 27. Realtime Publication
+-- Ensure realtime is enabled for tables that require instant UI updates (like invites and profiles)
+alter publication supabase_realtime add table public.profiles;
+alter publication supabase_realtime add table public.partner_invites;
