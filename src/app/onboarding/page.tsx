@@ -30,6 +30,38 @@ export default function OnboardingPage() {
   const [canceling, setCanceling] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Pre-generate stars using useMemo and a pure deterministic seed to satisfy React 19 purity requirements
+  const stars = React.useMemo(() => {
+    const seededRandom = (seed: number) => {
+      const x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: 50 }).map((_, i) => {
+      const r1 = seededRandom(i + 1);
+      const r2 = seededRandom(i + 2);
+      const r3 = seededRandom(i + 3);
+      const r4 = seededRandom(i + 4);
+      const r5 = seededRandom(i + 5);
+      return {
+        id: i,
+        width: r1 * 3 + 'px',
+        height: r2 * 3 + 'px',
+        top: r3 * 100 + '%',
+        left: r4 * 100 + '%',
+        duration: r5 * 2 + 1
+      };
+    });
+  }, []);
+
+  // Track if we had an active invitation or request before it was accepted
+  const hadInviteOrRequest = React.useRef(false);
+
+  useEffect(() => {
+    if (sentRequest || myInvite) {
+      hadInviteOrRequest.current = true;
+    }
+  }, [sentRequest, myInvite]);
+
   // Redirect to dashboard if already linked
   useEffect(() => {
     if (!loading && user && profile?.couple_id && !successLinked) {
@@ -59,7 +91,6 @@ export default function OnboardingPage() {
       }
     } else {
       setMyInvite(null);
-      // Don't clear generated code if it exists, maybe they just generated one and we are waiting for state
     }
 
     // Fetch invite requested by me
@@ -76,12 +107,25 @@ export default function OnboardingPage() {
       db.getCurrentProfile(targetData.owner_id).then(setTargetProfile);
     } else {
       setSentRequest(null);
-      setTargetProfile(null);
     }
-  }, [user?.id]);
+  }, [user]);
+
+  const triggerCinematic = useCallback(() => {
+    confetti({
+      particleCount: 150,
+      spread: 80,
+      origin: { y: 0.6 },
+      colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
+    });
+    setSuccessLinked(true);
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 4000);
+  }, [router]);
 
   useEffect(() => {
     if (user?.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchInvites();
 
       const channel = supabase.channel(`invites:${user.id}`)
@@ -98,7 +142,7 @@ export default function OnboardingPage() {
         supabase.removeChannel(channel);
       };
     }
-  }, [user?.id, fetchInvites, refreshState]);
+  }, [user, fetchInvites, refreshState]);
 
   // If a request was sent and is suddenly gone (e.g. accepted), refresh state to pick up couple_id
   useEffect(() => {
@@ -109,23 +153,10 @@ export default function OnboardingPage() {
 
   // If we just got a couple_id and successLinked isn't true yet, it means our request was accepted remotely!
   useEffect(() => {
-    if (profile?.couple_id && targetProfile && !successLinked) {
+    if (profile?.couple_id && !successLinked && hadInviteOrRequest.current) {
       triggerCinematic();
     }
-  }, [profile?.couple_id, targetProfile, successLinked]);
-
-  const triggerCinematic = () => {
-    confetti({
-      particleCount: 150,
-      spread: 80,
-      origin: { y: 0.6 },
-      colors: ['#a78bfa', '#ec4899', '#38bdf8', '#fbbf24']
-    });
-    setSuccessLinked(true);
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 4000);
-  };
+  }, [profile?.couple_id, successLinked, triggerCinematic]);
 
   const handleGenerateCode = async () => {
     if (!profile?.id) return;
@@ -218,18 +249,18 @@ export default function OnboardingPage() {
             >
               {/* Cinematic Background Stars */}
               <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                {[...Array(50)].map((_, i) => (
+                {stars.map((star) => (
                   <motion.div
-                    key={i}
+                    key={star.id}
                     className="absolute bg-white rounded-full"
                     style={{
-                      width: Math.random() * 3 + 'px',
-                      height: Math.random() * 3 + 'px',
-                      top: Math.random() * 100 + '%',
-                      left: Math.random() * 100 + '%',
+                      width: star.width,
+                      height: star.height,
+                      top: star.top,
+                      left: star.left,
                     }}
                     animate={{ opacity: [0, 1, 0] }}
-                    transition={{ duration: Math.random() * 2 + 1, repeat: Infinity }}
+                    transition={{ duration: star.duration, repeat: Infinity }}
                   />
                 ))}
               </div>

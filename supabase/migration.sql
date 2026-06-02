@@ -159,6 +159,12 @@ begin
   insert into public.memories (couple_id, title, content, category, date, created_by)
   values (new_couple_id, 'Connection Day', 'A new universe has been created.', 'Personal', current_date, owner_uid);
 
+  -- Notify requester that their request was accepted
+  insert into public.notifications (couple_id, recipient_id, sender_id, type, message, metadata)
+  values (new_couple_id, invite_record.target_user_id, owner_uid, 'connection_accepted', 
+          'Your connection request was accepted! A new universe has been created.', 
+          jsonb_build_object('couple_id', new_couple_id, 'invite_id', invite_id_input));
+
   return jsonb_build_object('success', true, 'couple_id', new_couple_id);
 end;
 $$ language plpgsql;
@@ -174,14 +180,21 @@ declare
   invite_record record;
 begin
   owner_uid := auth.uid();
+  if owner_uid is null then raise exception 'Not authenticated'; end if;
+  
   select * into invite_record from public.partner_invites where id = invite_id_input;
+  if not found then raise exception 'Invite not found'; end if;
   if invite_record.owner_id != owner_uid then raise exception 'Not authorized'; end if;
+  if invite_record.target_user_id is null then raise exception 'No user has requested this code yet'; end if;
 
   update public.partner_invites set status = 'declined' where id = invite_id_input;
 
-  -- Notify requester
-  insert into public.notifications (recipient_id, sender_id, type, message)
-  values (invite_record.target_user_id, owner_uid, 'connection_declined', 'Your connection request was declined.');
+  -- Notify requester only if they exist
+  if invite_record.target_user_id is not null then
+    insert into public.notifications (recipient_id, sender_id, type, message, metadata)
+    values (invite_record.target_user_id, owner_uid, 'connection_declined', 'Your connection request was declined.', 
+            jsonb_build_object('invite_id', invite_record.id));
+  end if;
 
   return jsonb_build_object('success', true);
 end;

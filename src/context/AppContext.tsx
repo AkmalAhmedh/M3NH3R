@@ -88,15 +88,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     // 1. Supabase Session Listener
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const initializeUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setUser(session.user);
-        fetchProfileAndCouple(session.user.id, session.user.email).then(() => setLoading(false));
+        await fetchProfileAndCouple(session.user.id, session.user.email);
       } else {
         setUser(null);
-        setLoading(false);
       }
-    });
+      setLoading(false);
+    };
+
+    initializeUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
@@ -114,7 +117,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchProfileAndCouple]);
 
   // Listen to updates on the current user's profile to detect when they are linked by their partner
   useEffect(() => {

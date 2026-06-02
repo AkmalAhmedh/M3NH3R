@@ -50,7 +50,7 @@ export default function SettingsPage() {
     }
   }, [user, profile, loading, router]);
 
-  const fetchBreakupStatus = async () => {
+  const fetchBreakupStatus = React.useCallback(async () => {
     if (profile?.couple_id) {
       try {
         const c = await db.getCouple(profile.couple_id);
@@ -65,7 +65,7 @@ export default function SettingsPage() {
         console.error('Error fetching couple status:', err);
       }
     }
-  };
+  }, [profile]);
 
   useEffect(() => {
     const loadSettingsData = async () => {
@@ -85,7 +85,7 @@ export default function SettingsPage() {
     if (profile?.couple_id) {
       loadSettingsData();
     }
-  }, [profile?.couple_id, couple?.anniversary_date]);
+  }, [profile?.couple_id, couple?.anniversary_date, fetchBreakupStatus]);
 
   const handleUpdateAnniversary = async (e: React.FormEvent) => {
     e.preventDefault();

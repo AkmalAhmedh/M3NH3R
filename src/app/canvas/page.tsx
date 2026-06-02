@@ -61,6 +61,29 @@ export default function CanvasPage() {
     }
   }, [user, profile, loading, router]);
 
+  // Background image pre-loading to resolve asynchronous loading stutter
+  const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    if (!bgUrl) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBgImage(null);
+      return;
+    }
+    const img = new Image();
+    img.src = bgUrl;
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBgImage(img);
+    };
+    img.onerror = () => {
+      console.error('Failed to load background image backdrop.');
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBgImage(null);
+    };
+  }, [bgUrl]);
+
   const drawLines = useCallback((ctx: CanvasRenderingContext2D) => {
     lines.forEach((line) => {
       if (line.points.length < 2) return;
@@ -88,29 +111,22 @@ export default function CanvasPage() {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // If background image set, draw it first
-    if (bgUrl) {
-      const img = new Image();
-      img.src = bgUrl;
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        // Draw centered and cover scale
-        const ratio = Math.max(canvas.width / img.width, canvas.height / img.height);
-        const w = img.width * ratio;
-        const h = img.height * ratio;
-        const x = (canvas.width - w) / 2;
-        const y = (canvas.height - h) / 2;
-        ctx.drawImage(img, x, y, w, h);
-        
-        // Then draw lines over it
-        drawLines(ctx);
-      };
-    } else {
-      drawLines(ctx);
+    // If background image set and loaded, draw it first
+    if (bgImage) {
+      // Draw centered and cover scale
+      const ratio = Math.max(canvas.width / bgImage.width, canvas.height / bgImage.height);
+      const w = bgImage.width * ratio;
+      const h = bgImage.height * ratio;
+      const x = (canvas.width - w) / 2;
+      const y = (canvas.height - h) / 2;
+      ctx.drawImage(bgImage, x, y, w, h);
     }
-  }, [bgUrl, drawLines]);
+    
+    // Then draw lines over it
+    drawLines(ctx);
+  }, [bgImage, drawLines]);
 
-  // Handle redraw of canvas whenever lines or bgUrl changes
+  // Handle redraw of canvas whenever lines or bgImage changes
   useEffect(() => {
     drawCanvas();
   }, [drawCanvas]);
@@ -135,7 +151,9 @@ export default function CanvasPage() {
       window.removeEventListener('resize', handleResize);
       clearTimeout(timer);
     };
-  }, [bgUrl, drawCanvas]);
+  }, [bgImage, drawCanvas]);
+
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Real-time Collaboration Channel using Supabase Broadcast
   useEffect(() => {
@@ -160,8 +178,11 @@ export default function CanvasPage() {
       })
       .subscribe();
 
+    channelRef.current = channel;
+
     return () => {
       supabase.removeChannel(channel);
+      channelRef.current = null;
     };
   }, [profile?.couple_id]);
 
@@ -191,19 +212,21 @@ export default function CanvasPage() {
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!profile) return;
     const coords = getCoordinates(e);
+    const channel = channelRef.current;
 
     // 1. Broadcast cursor position to partner in real-time
-    const channel = supabase.channel(`canvas-${profile.couple_id}`);
-    channel.send({
-      type: 'broadcast',
-      event: 'cursor_move',
-      payload: {
-        userId: profile.id,
-        username: profile.username,
-        x: coords.x,
-        y: coords.y
-      }
-    });
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'cursor_move',
+        payload: {
+          userId: profile.id,
+          username: profile.username,
+          x: coords.x,
+          y: coords.y
+        }
+      });
+    }
 
     // 2. Perform drawing
     if (!isDrawing || !currentLine) return;
@@ -217,11 +240,13 @@ export default function CanvasPage() {
     setLines(updatedLines);
 
     // 3. Broadcast stroke database in real-time
-    channel.send({
-      type: 'broadcast',
-      event: 'draw_stroke',
-      payload: { lines: updatedLines }
-    });
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'draw_stroke',
+        payload: { lines: updatedLines }
+      });
+    }
   };
 
   const handlePointerUp = () => {
@@ -234,12 +259,14 @@ export default function CanvasPage() {
     setLines([]);
     setBgUrl('');
 
-    const channel = supabase.channel(`canvas-${profile.couple_id}`);
-    channel.send({
-      type: 'broadcast',
-      event: 'clear_canvas',
-      payload: {}
-    });
+    const channel = channelRef.current;
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'clear_canvas',
+        payload: {}
+      });
+    }
   };
 
   const handleApplyBackground = () => {

@@ -1,13 +1,19 @@
 -- Enable necessary extensions
 create extension if not exists "uuid-ossp";
 
--- 1. Couples Table
+-- 1. Couples Table (Basic Definition)
 create table public.couples (
     id uuid primary key default gen_random_uuid(),
     name text,
     anniversary_date date,
+    user1_id uuid,
+    user2_id uuid,
+    status text default 'active' not null, -- active, breakup_pending, ended
+    shared_key text,
     created_at timestamp with time zone default now() not null,
-    updated_at timestamp with time zone default now() not null
+    updated_at timestamp with time zone default now() not null,
+    ended_at timestamp with time zone,
+    breakup_initiator_id uuid
 );
 
 -- Enable RLS for Couples
@@ -17,7 +23,6 @@ alter table public.couples enable row level security;
 create table public.profiles (
     id uuid primary key references auth.users on delete cascade,
     couple_id uuid references public.couples(id) on delete set null,
-    pending_partner_id uuid references public.profiles(id) on delete set null,
     email text,
     username text,
     avatar_url text,
@@ -30,6 +35,11 @@ create table public.profiles (
 
 -- Enable RLS for Profiles
 alter table public.profiles enable row level security;
+
+-- Add circular reference foreign key constraints to Couples Table
+alter table public.couples add constraint fk_couples_user1 foreign key (user1_id) references public.profiles(id) on delete set null;
+alter table public.couples add constraint fk_couples_user2 foreign key (user2_id) references public.profiles(id) on delete set null;
+alter table public.couples add constraint fk_couples_breakup_initiator foreign key (breakup_initiator_id) references public.profiles(id) on delete set null;
 
 -- Helper Function to fetch current user's couple_id
 create or replace function public.get_user_couple_id()
@@ -103,56 +113,37 @@ create or replace trigger on_auth_user_created
   for each row execute procedure public.handle_new_user();
 
 
--- 3. Invite Codes
-create table public.invite_codes (
+-- 3. Partner Invites Table
+create table public.partner_invites (
     id uuid primary key default gen_random_uuid(),
     code text unique not null,
-    issuer_id uuid references public.profiles(id) on delete cascade not null,
-    is_used boolean default false not null,
+    owner_id uuid references public.profiles(id) on delete cascade not null,
+    target_user_id uuid references public.profiles(id) on delete cascade,
+    status text default 'pending' not null, -- pending, accepted, declined, expired
+    expires_at timestamp with time zone not null,
     created_at timestamp with time zone default now() not null
 );
 
-alter table public.invite_codes enable row level security;
+alter table public.partner_invites enable row level security;
 
-create policy "Anyone can read invite codes"
-    on public.invite_codes for select
-    using (true);
+create policy "Users can view invites they own or are targeted for"
+    on public.partner_invites for select
+    using (auth.uid() = owner_id or auth.uid() = target_user_id or status = 'pending');
 
-create policy "Users can insert their own invite codes"
-    on public.invite_codes for insert
-    with check (issuer_id = auth.uid());
+create policy "Users can insert their own invites"
+    on public.partner_invites for insert
+    with check (owner_id = auth.uid());
 
-create policy "Anyone can update invite codes to redeem them"
-    on public.invite_codes for update
-    using (auth.role() = 'authenticated');
+create policy "Users can update their own invites or targeted ones"
+    on public.partner_invites for update
+    using (auth.uid() = owner_id or auth.uid() = target_user_id);
 
-
--- 4. Breakup Requests
-create table public.breakup_requests (
-    id uuid primary key default gen_random_uuid(),
-    couple_id uuid references public.couples(id) on delete cascade not null,
-    initiator_id uuid references public.profiles(id) on delete cascade not null,
-    status text default 'pending' not null, -- pending, accepted, declined
-    created_at timestamp with time zone default now() not null,
-    updated_at timestamp with time zone default now() not null
-);
-
-alter table public.breakup_requests enable row level security;
-
-create policy "Users can view breakup requests for their couple"
-    on public.breakup_requests for select
-    using (couple_id = public.get_user_couple_id());
-
-create policy "Users can create breakup requests for their couple"
-    on public.breakup_requests for insert
-    with check (couple_id = public.get_user_couple_id() and initiator_id = auth.uid());
-
-create policy "Users can update breakup requests for their couple"
-    on public.breakup_requests for update
-    using (couple_id = public.get_user_couple_id());
+create policy "Anyone can delete invites"
+    on public.partner_invites for delete
+    using (auth.uid() = owner_id);
 
 
--- 5. Memories & Assets
+-- 4. Memories & Assets
 create table public.memories (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -190,7 +181,7 @@ create policy "Couple access memory assets"
     );
 
 
--- 6. Sandbox Cards
+-- 5. Sandbox Cards
 create table public.sandbox_cards (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -210,7 +201,7 @@ create policy "Couple access sandbox cards"
     using (couple_id = public.get_user_couple_id());
 
 
--- 7. Drawings & Assets
+-- 6. Drawings & Assets
 create table public.drawings (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -248,7 +239,7 @@ create policy "Couple access drawing assets"
     );
 
 
--- 8. Mood Logs
+-- 7. Mood Logs
 create table public.mood_logs (
     id uuid primary key default gen_random_uuid(),
     user_id uuid references public.profiles(id) on delete cascade not null,
@@ -275,7 +266,7 @@ create policy "Users can insert their own mood logs"
     with check (user_id = auth.uid());
 
 
--- 9. Wants (Preferences)
+-- 8. Wants (Preferences)
 create table public.wants (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -293,7 +284,7 @@ create policy "Couple access wants"
     using (couple_id = public.get_user_couple_id());
 
 
--- 10. Wishlists
+-- 9. Wishlists
 create table public.wishlists (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -310,7 +301,7 @@ create policy "Couple access wishlists"
     using (couple_id = public.get_user_couple_id());
 
 
--- 11. Movies
+-- 10. Movies
 create table public.movies (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -330,7 +321,7 @@ create policy "Couple access movies"
     using (couple_id = public.get_user_couple_id());
 
 
--- 12. Games
+-- 11. Games
 create table public.games (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -349,7 +340,7 @@ create policy "Couple access games"
     using (couple_id = public.get_user_couple_id());
 
 
--- 13. Locations
+-- 12. Locations
 create table public.locations (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -369,7 +360,7 @@ create policy "Couple access locations"
     using (couple_id = public.get_user_couple_id());
 
 
--- 14. Journals
+-- 13. Journals
 create table public.journals (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -389,7 +380,7 @@ create policy "Couple access journals"
     using (couple_id = public.get_user_couple_id());
 
 
--- 15. Voice Capsules
+-- 14. Voice Capsules
 create table public.voice_capsules (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -407,7 +398,7 @@ create policy "Couple access voice capsules"
     using (couple_id = public.get_user_couple_id());
 
 
--- 16. Love Letters (Lock until date)
+-- 15. Love Letters (Lock until date)
 create table public.love_letters (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -440,7 +431,7 @@ create policy "Users can update/delete their own created love letters"
     using (couple_id = public.get_user_couple_id() and created_by = auth.uid());
 
 
--- 17. Time Capsules
+-- 16. Time Capsules
 create table public.time_capsules (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -473,10 +464,10 @@ create policy "Users can manage their own created time capsules"
     using (couple_id = public.get_user_couple_id() and created_by = auth.uid());
 
 
--- 18. Notifications
+-- 17. Notifications (Allows null couple_id for connection stage)
 create table public.notifications (
     id uuid primary key default gen_random_uuid(),
-    couple_id uuid references public.couples(id) on delete cascade not null,
+    couple_id uuid references public.couples(id) on delete cascade,
     recipient_id uuid references public.profiles(id) on delete cascade not null,
     sender_id uuid references public.profiles(id) on delete cascade not null,
     type text not null,
@@ -492,8 +483,16 @@ create policy "Couple read/write notifications"
     on public.notifications for all
     using (couple_id = public.get_user_couple_id());
 
+create policy "Users can read their own notifications regardless of couple"
+    on public.notifications for select
+    using (recipient_id = auth.uid());
 
--- 19. Achievements
+create policy "Users can update their own notifications"
+    on public.notifications for update
+    using (recipient_id = auth.uid());
+
+
+-- 18. Achievements
 create table public.achievements (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null,
@@ -511,7 +510,7 @@ create policy "Couple access achievements"
     using (couple_id = public.get_user_couple_id());
 
 
--- 20. Safe Space (Pin code locked area)
+-- 19. Safe Space (Pin code locked area)
 create table public.safe_space (
     id uuid primary key default gen_random_uuid(),
     couple_id uuid references public.couples(id) on delete cascade not null unique,
@@ -527,92 +526,7 @@ create policy "Couple access safe space"
     using (couple_id = public.get_user_couple_id());
 
 
--- Mutual connection trigger logic
-create or replace function public.link_partner_mutual(invite_code text)
-returns jsonb
-security definer
-set search_path = public
-as $$
-declare
-  my_id uuid;
-  partner_code_data record;
-  partner_id uuid;
-  couple_uuid uuid;
-  is_mutual boolean;
-  ret jsonb;
-begin
-  my_id := auth.uid();
-  if my_id is null then
-    raise exception 'Not authenticated';
-  end if;
-
-  -- 1. Find the invite code to get the partner's user ID
-  select * into partner_code_data from public.invite_codes
-  where code = invite_code and is_used = false;
-  
-  if not found then
-    raise exception 'Invalid or expired invite code';
-  end if;
-
-  partner_id := partner_code_data.issuer_id;
-  if partner_id = my_id then
-    raise exception 'You cannot link with your own code';
-  end if;
-
-  -- 2. Update my profile's pending_partner_id to partner_id
-  update public.profiles
-  set pending_partner_id = partner_id
-  where id = my_id;
-
-  -- 3. Check if partner's pending_partner_id is set to my_id (mutual link check)
-  select exists (
-    select 1 from public.profiles
-    where id = partner_id and pending_partner_id = my_id
-  ) into is_mutual;
-
-  if is_mutual then
-    -- Create new couple
-    insert into public.couples (name, anniversary_date)
-    values ('Our Shared Universe', current_date)
-    returning id into couple_uuid;
-
-    -- Update both profiles: set couple_id and clear pending_partner_id
-    update public.profiles
-    set couple_id = couple_uuid, pending_partner_id = null
-    where id in (my_id, partner_id);
-
-    -- Mark BOTH invite codes as used
-    update public.invite_codes
-    set is_used = true
-    where issuer_id in (my_id, partner_id);
-
-    -- Insert connection notification
-    insert into public.notifications (couple_id, recipient_id, sender_id, type, message)
-    values (
-      couple_uuid,
-      partner_id,
-      my_id,
-      'link',
-      'Partner connected! Your universe has been established.'
-    );
-
-    ret := jsonb_build_object(
-      'linked', true,
-      'couple_id', couple_uuid
-    );
-  else
-    ret := jsonb_build_object(
-      'linked', false,
-      'couple_id', null
-    );
-  end if;
-
-  return ret;
-end;
-$$ language plpgsql;
-
-
--- Triggers to update updated_at columns
+-- 20. Triggers to update updated_at columns
 create or replace function public.update_updated_at_column()
 returns trigger as $$
 begin
@@ -623,15 +537,186 @@ $$ language plpgsql;
 
 create trigger update_couples_updated_at before update on public.couples for each row execute procedure public.update_updated_at_column();
 create trigger update_profiles_updated_at before update on public.profiles for each row execute procedure public.update_updated_at_column();
-create trigger update_breakup_requests_updated_at before update on public.breakup_requests for each row execute procedure public.update_updated_at_column();
 create trigger update_sandbox_cards_updated_at before update on public.sandbox_cards for each row execute procedure public.update_updated_at_column();
 create trigger update_drawings_updated_at before update on public.drawings for each row execute procedure public.update_updated_at_column();
 create trigger update_safe_space_updated_at before update on public.safe_space for each row execute procedure public.update_updated_at_column();
 
--- 21. Indexes for performance optimizations
+
+-- 21. RPC: Request Connection
+create or replace function public.request_partner_connection(invite_code_input text)
+returns jsonb
+security definer
+set search_path = public
+as $$
+declare
+  requester_id uuid;
+  invite_record record;
+  requester_couple_id uuid;
+  owner_couple_id uuid;
+begin
+  requester_id := auth.uid();
+  if requester_id is null then raise exception 'Not authenticated'; end if;
+
+  select * into invite_record from public.partner_invites 
+  where code = invite_code_input and status = 'pending' and expires_at > now();
+
+  if not found then raise exception 'Invalid or expired invite code'; end if;
+  if invite_record.owner_id = requester_id then raise exception 'Cannot connect to yourself'; end if;
+
+  -- Ensure neither has an active couple
+  select couple_id into requester_couple_id from public.profiles where id = requester_id;
+  select couple_id into owner_couple_id from public.profiles where id = invite_record.owner_id;
+
+  if requester_couple_id is not null then raise exception 'You are already in an active connection'; end if;
+  if owner_couple_id is not null then raise exception 'This user is already in an active connection'; end if;
+
+  -- Update the invite to target this requester
+  update public.partner_invites 
+  set target_user_id = requester_id
+  where id = invite_record.id;
+
+  -- Notify the owner
+  insert into public.notifications (couple_id, recipient_id, sender_id, type, message, metadata)
+  values (
+    null, invite_record.owner_id, requester_id, 'connection_request', 
+    'Someone wants to connect with you.', 
+    jsonb_build_object('invite_id', invite_record.id)
+  );
+
+  return jsonb_build_object('success', true, 'invite_id', invite_record.id);
+end;
+$$ language plpgsql;
+
+
+-- 22. RPC: Accept Connection
+create or replace function public.accept_partner_connection(invite_id_input uuid)
+returns jsonb
+security definer
+set search_path = public
+as $$
+declare
+  owner_uid uuid;
+  invite_record record;
+  requester_couple_id uuid;
+  owner_couple_id uuid;
+  new_couple_id uuid;
+  new_shared_key text;
+begin
+  owner_uid := auth.uid();
+  if owner_uid is null then raise exception 'Not authenticated'; end if;
+
+  select * into invite_record from public.partner_invites where id = invite_id_input;
+  if not found then raise exception 'Invite not found'; end if;
+  if invite_record.owner_id != owner_uid then raise exception 'Not authorized'; end if;
+  if invite_record.target_user_id is null then raise exception 'No user has requested this code yet'; end if;
+  if invite_record.status != 'pending' then raise exception 'Invite is no longer pending'; end if;
+
+  select couple_id into owner_couple_id from public.profiles where id = owner_uid;
+  select couple_id into requester_couple_id from public.profiles where id = invite_record.target_user_id;
+
+  if owner_couple_id is not null or requester_couple_id is not null then 
+    raise exception 'One or both users already have an active connection'; 
+  end if;
+
+  -- Generate shared key
+  new_shared_key := encode(gen_random_bytes(16), 'hex');
+
+  -- Create couple
+  insert into public.couples (name, user1_id, user2_id, status, shared_key, anniversary_date)
+  values ('Our Shared Universe', owner_uid, invite_record.target_user_id, 'active', new_shared_key, current_date)
+  returning id into new_couple_id;
+
+  -- Update profiles
+  update public.profiles set couple_id = new_couple_id where id in (owner_uid, invite_record.target_user_id);
+
+  -- Update invite
+  update public.partner_invites set status = 'accepted' where id = invite_id_input;
+
+  -- Expire all other pending invites for both users
+  update public.partner_invites set status = 'expired' 
+  where (owner_id in (owner_uid, invite_record.target_user_id) or target_user_id in (owner_uid, invite_record.target_user_id))
+  and id != invite_id_input and status = 'pending';
+
+  -- Create first memory
+  insert into public.memories (couple_id, title, content, category, date, created_by)
+  values (new_couple_id, 'Connection Day', 'A new universe has been created.', 'Personal', current_date, owner_uid);
+
+  return jsonb_build_object('success', true, 'couple_id', new_couple_id);
+end;
+$$ language plpgsql;
+
+
+-- 23. RPC: Decline Connection
+create or replace function public.decline_partner_connection(invite_id_input uuid)
+returns jsonb
+security definer
+set search_path = public
+as $$
+declare
+  owner_uid uuid;
+  invite_record record;
+begin
+  owner_uid := auth.uid();
+  select * into invite_record from public.partner_invites where id = invite_id_input;
+  if invite_record.owner_id != owner_uid then raise exception 'Not authorized'; end if;
+
+  update public.partner_invites set status = 'declined' where id = invite_id_input;
+
+  -- Notify requester
+  insert into public.notifications (recipient_id, sender_id, type, message)
+  values (invite_record.target_user_id, owner_uid, 'connection_declined', 'Your connection request was declined.');
+
+  return jsonb_build_object('success', true);
+end;
+$$ language plpgsql;
+
+
+-- 24. RPC: Initiate Breakup
+create or replace function public.initiate_breakup()
+returns jsonb
+security definer
+set search_path = public
+as $$
+declare
+  c_id uuid;
+begin
+  select couple_id into c_id from public.profiles where id = auth.uid();
+  if c_id is null then raise exception 'No active connection'; end if;
+
+  update public.couples set status = 'breakup_pending', breakup_initiator_id = auth.uid() where id = c_id;
+  return jsonb_build_object('success', true);
+end;
+$$ language plpgsql;
+
+
+-- 25. RPC: Respond to Breakup
+create or replace function public.respond_to_breakup(accept boolean)
+returns jsonb
+security definer
+set search_path = public
+as $$
+declare
+  c_id uuid;
+begin
+  select couple_id into c_id from public.profiles where id = auth.uid();
+  if c_id is null then raise exception 'No active connection'; end if;
+
+  if accept then
+    update public.couples set status = 'ended', ended_at = now() where id = c_id;
+    update public.profiles set couple_id = null where couple_id = c_id;
+  else
+    update public.couples set status = 'active', breakup_initiator_id = null where id = c_id;
+  end if;
+
+  return jsonb_build_object('success', true);
+end;
+$$ language plpgsql;
+
+
+-- 26. Performance indexes
 create index if not exists idx_profiles_couple_id on public.profiles(couple_id);
-create index if not exists idx_invite_codes_issuer_id on public.invite_codes(issuer_id);
-create index if not exists idx_breakup_requests_couple_id on public.breakup_requests(couple_id);
+create index if not exists idx_partner_invites_owner_id on public.partner_invites(owner_id);
+create index if not exists idx_partner_invites_code on public.partner_invites(code);
 create index if not exists idx_memories_couple_id on public.memories(couple_id);
 create index if not exists idx_memory_assets_memory_id on public.memory_assets(memory_id);
 create index if not exists idx_sandbox_cards_couple_id on public.sandbox_cards(couple_id);
