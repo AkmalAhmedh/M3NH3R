@@ -363,3 +363,22 @@ body {
   bottom: 0;
   background: linear-gradient(0deg, rgba(2, 6, 23, 0.9), transparent);
 }
+
+/* ============================================================
+   CANVAS UTILITIES
+   ============================================================ */
+.canvas-viewport {
+  overscroll-behavior: none;
+  scrollbar-gutter: stable;
+}
+
+/* Smooth canvas zoom transition */
+.canvas-zoomable {
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Toolbar active state glow */
+.tool-btn-active {
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.5), 0 0 15px rgba(124, 58, 237, 0.3);
+}
+
