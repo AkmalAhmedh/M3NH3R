@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   Settings, Heart, Calendar, ShieldAlert, AlertTriangle, EyeOff, Eye, 
-  Trash, Plus, Lock, RefreshCw, Compass 
+  Trash, Plus, Lock, RefreshCw, Compass, User 
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
@@ -34,6 +34,11 @@ export default function SettingsPage() {
   // Anniversary date editor
   const [annDate, setAnnDate] = useState(couple?.anniversary_date || '');
   const [annSuccess, setAnnSuccess] = useState(false);
+
+  // Profile name editor
+  const [userName, setUserName] = useState(profile?.username || '');
+  const [nameSuccess, setNameSuccess] = useState(false);
+  const [nameLoading, setNameLoading] = useState(false);
 
   // Breakup consent states
   const [breakupLoading, setBreakupLoading] = useState(false);
@@ -87,6 +92,12 @@ export default function SettingsPage() {
     }
   }, [profile?.couple_id, couple?.anniversary_date, fetchBreakupStatus]);
 
+  useEffect(() => {
+    if (profile?.username) {
+      setUserName(profile.username);
+    }
+  }, [profile?.username]);
+
   const handleUpdateAnniversary = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.couple_id || !annDate) return;
@@ -97,6 +108,22 @@ export default function SettingsPage() {
       await refreshState();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleUpdateName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.id || !userName.trim()) return;
+    setNameLoading(true);
+    try {
+      await db.updateProfileName(profile.id, userName.trim());
+      setNameSuccess(true);
+      setTimeout(() => setNameSuccess(false), 3000);
+      await refreshState();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setNameLoading(false);
     }
   };
 
@@ -332,6 +359,44 @@ export default function SettingsPage() {
 
         {/* Column 3: Relationship configurations */}
         <section className="space-y-6">
+          {/* Profile Settings Card */}
+          <div className="glass p-5 rounded-2xl border border-white/5 space-y-4">
+            <h2 className="text-sm font-semibold tracking-wider text-slate-300 flex items-center gap-2">
+              <User className="w-4 h-4 text-brand-violet" /> Profile Details
+            </h2>
+
+            <form onSubmit={handleUpdateName} className="space-y-3">
+              <div>
+                <label className="block text-[9px] uppercase text-slate-400 tracking-wider mb-1">Your Display Name</label>
+                <input
+                  type="text"
+                  required
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  className="w-full py-2 px-3 glass-input text-xs"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={nameLoading}
+                className="w-full py-2 bg-gradient-to-r from-brand-violet to-brand-fuchsia hover:opacity-90 transition rounded-lg text-xs font-semibold text-white cursor-pointer flex justify-center items-center gap-1 disabled:opacity-50"
+              >
+                {nameLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Save Display Name'}
+              </button>
+
+              {nameSuccess && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-center text-[10px] text-emerald-400"
+                >
+                  Name updated successfully!
+                </motion.div>
+              )}
+            </form>
+          </div>
+
           {/* Anniversary Card */}
           <div className="glass p-5 rounded-2xl border border-white/5 space-y-4">
             <h2 className="text-sm font-semibold tracking-wider text-slate-300 flex items-center gap-2">

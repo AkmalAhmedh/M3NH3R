@@ -38,6 +38,20 @@ export const db = {
     return data;
   },
 
+  updateProfileName: async (userId: string, newName: string): Promise<Profile | null> => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ username: newName, updated_at: new Date().toISOString() })
+      .eq('id', userId)
+      .select()
+      .single();
+    if (error) {
+      console.error('Error updating name:', error);
+      return null;
+    }
+    return data;
+  },
+
   getPartnerProfile: async (coupleId: string, myId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from('profiles')

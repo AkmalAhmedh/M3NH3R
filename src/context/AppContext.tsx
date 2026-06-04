@@ -26,14 +26,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [couple, setCouple] = useState<Couple | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfileAndCouple = React.useCallback(async (userId: string, userEmail?: string) => {
+  const fetchProfileAndCouple = React.useCallback(async (userId: string, userEmail?: string, userName?: string) => {
     try {
       let myProfile = await db.getCurrentProfile(userId);
       
       // If no profile exists and user email is provided, create one
       if (!myProfile && userEmail) {
         try {
-          myProfile = await db.createProfile(userId, userEmail);
+          myProfile = await db.createProfile(userId, userEmail, userName);
         } catch (createErr) {
           console.error('Error creating profile:', createErr);
           // Profile creation failed - this is a critical error
@@ -70,7 +70,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshState = React.useCallback(async () => {
     if (user) {
-      await fetchProfileAndCouple(user.id, user.email ?? undefined);
+      await fetchProfileAndCouple(user.id, user.email ?? undefined, user.user_metadata?.username);
     }
   }, [user, fetchProfileAndCouple]);
 
@@ -123,7 +123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setUser(null);
         } else if (session) {
           setUser(session.user);
-          await fetchProfileAndCouple(session.user.id, session.user.email);
+          await fetchProfileAndCouple(session.user.id, session.user.email, session.user.user_metadata?.username);
         } else {
           setUser(null);
         }
@@ -142,7 +142,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
         setUser(session.user);
-        await fetchProfileAndCouple(session.user.id, session.user.email);
+        await fetchProfileAndCouple(session.user.id, session.user.email, session.user.user_metadata?.username);
       } else {
         setUser(null);
         setProfile(null);
