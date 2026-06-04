@@ -70,7 +70,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshState = React.useCallback(async () => {
     if (user) {
-      await fetchProfileAndCouple(user.id);
+      await fetchProfileAndCouple(user.id, user.email ?? undefined);
     }
   }, [user, fetchProfileAndCouple]);
 

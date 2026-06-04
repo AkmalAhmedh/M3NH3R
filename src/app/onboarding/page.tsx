@@ -65,16 +65,16 @@ export default function OnboardingPage() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/login');
+      router.replace('/login');
     }
   }, [user, loading, router]);
 
-  // Redirect to dashboard if already linked
+  // Redirect to dashboard if already linked (and not mid-cinematic)
   useEffect(() => {
     if (!loading && user && profile?.couple_id && !successLinked) {
-      router.push('/dashboard');
+      router.replace('/dashboard');
     }
-  }, [user, profile, loading, router, successLinked]);
+  }, [user, profile?.couple_id, loading, router, successLinked]);
 
   const fetchInvites = useCallback(async () => {
     if (!user?.id) return;
