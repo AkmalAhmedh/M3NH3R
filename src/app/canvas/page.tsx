@@ -82,7 +82,8 @@ export default function CanvasPage() {
   const isDrawingRef = useRef(false);
   const startPosRef = useRef<Point>({ x: 0, y: 0 });
   const currentStrokeRef = useRef<Stroke | null>(null);
-  const lastBroadcastMs = useRef(0);
+  const lastCursorBroadcastMs = useRef(0);
+  const lastStrokeBroadcastMs = useRef(0);
 
   // UI State
   const [partnerState, setPartnerState] = useState<PartnerState | null>(null);
@@ -270,7 +271,46 @@ export default function CanvasPage() {
         strokesRef.current = [];
         setBgUrl('');
       })
-      .subscribe();
+      .on('broadcast', { event: 'request_sync' }, () => {
+        // Partner requested sync, send all strokes in chunks
+        const allStrokes = strokesRef.current;
+        const chunkSize = 20;
+        for (let i = 0; i < allStrokes.length; i += chunkSize) {
+          channel.send({
+            type: 'broadcast',
+            event: 'full_sync',
+            payload: { strokes: allStrokes.slice(i, i + chunkSize) }
+          });
+        }
+      })
+      .on('broadcast', { event: 'full_sync' }, ({ payload }) => {
+        const incomingStrokes = payload.strokes as Stroke[];
+        if (!incomingStrokes) return;
+        setStrokes(prev => {
+          const next = [...prev];
+          let changed = false;
+          incomingStrokes.forEach(inc => {
+            const idx = next.findIndex(s => s.id === inc.id);
+            if (idx === -1) {
+              next.push(inc);
+              changed = true;
+            } else if (next[idx].points.length < inc.points.length) {
+              next[idx] = inc;
+              changed = true;
+            }
+          });
+          if (changed) {
+            strokesRef.current = next;
+            return next;
+          }
+          return prev;
+        });
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          channel.send({ type: 'broadcast', event: 'request_sync', payload: {} });
+        }
+      });
 
     channelRef.current = channel;
     return () => {
@@ -332,8 +372,8 @@ export default function CanvasPage() {
     const now = Date.now();
     const channel = channelRef.current;
 
-    // Broadcast cursor every 50ms
-    if (now - lastBroadcastMs.current > 50 && channel) {
+    // Broadcast cursor every 100ms
+    if (now - lastCursorBroadcastMs.current > 100 && channel) {
       channel.send({
         type: 'broadcast', event: 'cursor',
         payload: {
@@ -342,13 +382,17 @@ export default function CanvasPage() {
           isDrawing: isDrawingRef.current, color,
         }
       });
-      lastBroadcastMs.current = now;
+      lastCursorBroadcastMs.current = now;
     }
 
     if (!isDrawingRef.current || !currentStrokeRef.current) return;
 
     if (tool === 'pencil' || tool === 'eraser') {
-      // Freehand — append point
+      // Freehand — append point, but ignore points that are too close to optimize payload
+      const lastPoint = currentStrokeRef.current.points[currentStrokeRef.current.points.length - 1];
+      const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
+      if (dist < 3) return;
+
       const updated: Stroke = {
         ...currentStrokeRef.current,
         points: [...currentStrokeRef.current.points, pos],
@@ -362,12 +406,13 @@ export default function CanvasPage() {
         return next;
       });
 
-      // Broadcast stroke update throttled
-      if (now - lastBroadcastMs.current > 30 && channel) {
+      // Broadcast stroke update throttled (100ms)
+      if (now - lastStrokeBroadcastMs.current > 100 && channel) {
         channel.send({
           type: 'broadcast', event: 'stroke_update',
           payload: { stroke: updated }
         });
+        lastStrokeBroadcastMs.current = now;
       }
     } else {
       // Shape tools — update endpoint only, show in overlay
@@ -561,8 +606,11 @@ export default function CanvasPage() {
           <button onClick={() => setBgSelectorOpen(true)} className="flex items-center gap-1.5 text-xs glass hover:bg-white/10 transition px-3 py-2 rounded-xl cursor-pointer text-slate-300 border border-white/5">
             <ImageIcon className="w-3.5 h-3.5 text-brand-cyan" /> Backdrop
           </button>
+          <button onClick={() => channelRef.current?.send({ type: 'broadcast', event: 'request_sync', payload: {} })} className="flex items-center gap-1.5 text-xs glass hover:bg-white/10 transition px-3 py-2 rounded-xl cursor-pointer text-slate-300 border border-white/5">
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-400" /> Sync
+          </button>
           <button onClick={handleClear} className="flex items-center gap-1.5 text-xs glass hover:bg-white/10 transition px-3 py-2 rounded-xl cursor-pointer text-slate-300 border border-white/5">
-            <RefreshCw className="w-3.5 h-3.5 text-rose-400" /> Clear
+            <X className="w-3.5 h-3.5 text-rose-400" /> Clear
           </button>
           <button onClick={handleDownload} className="flex items-center gap-1.5 text-xs glass hover:bg-white/10 transition px-3 py-2 rounded-xl cursor-pointer text-slate-300 border border-white/5">
             <Download className="w-3.5 h-3.5 text-brand-gold" /> Save
