@@ -16,8 +16,8 @@ export const db = {
         id: userId,
         email,
         username: username || email.split('@')[0],
-        mood: 'Neutral',
-        mood_emoji: '🌙',
+        mood: null,
+        mood_emoji: null,
         last_active_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -66,14 +66,14 @@ export const db = {
   updateProfileMood: async (userId: string, mood: string, emoji: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from('profiles')
-      .update({ mood, mood_emoji: emoji, last_active_at: new Date().toISOString() })
+      .update({ mood, mood_emoji: emoji, last_active_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', userId)
       .select()
       .single();
     if (error) throw error;
     
-    // Also log mood history
-    await supabase.from('mood_logs').insert({ user_id: userId, mood, mood_emoji: emoji });
+    // Also log mood history (non-blocking)
+    supabase.from('mood_logs').insert({ user_id: userId, mood, mood_emoji: emoji }).then(() => null);
     return data;
   },
 
@@ -148,8 +148,6 @@ export const db = {
   },
 
   cancelPendingLink: async (myId: string): Promise<void> => {
-    // If user initiated a request (meaning they are target_user_id), they can cancel it
-    // by resetting target_user_id on the invite.
     const { error } = await supabase
       .from('partner_invites')
       .update({ target_user_id: null })
@@ -171,7 +169,7 @@ export const db = {
   updateAnniversary: async (coupleId: string, date: string): Promise<Couple | null> => {
     const { data, error } = await supabase
       .from('couples')
-      .update({ anniversary_date: date })
+      .update({ anniversary_date: date, updated_at: new Date().toISOString() })
       .eq('id', coupleId)
       .select()
       .single();
@@ -180,13 +178,16 @@ export const db = {
   },
 
   // --- Breakup Consent System ---
+  // FIXED: These RPCs are called server-side via Supabase RPC, which uses the
+  // auth context automatically. Params are passed correctly.
   initiateBreakup: async (coupleId: string, myId: string): Promise<void> => {
-    const { error } = await supabase.rpc('initiate_breakup');
+    // The RPC uses auth.uid() internally, so we just call it
+    const { error } = await supabase.rpc('initiate_breakup', { couple_id_input: coupleId, initiator_id_input: myId });
     if (error) throw error;
   },
 
   respondToBreakup: async (requestId: string, accept: boolean, coupleId: string): Promise<void> => {
-    const { error } = await supabase.rpc('respond_to_breakup', { accept });
+    const { error } = await supabase.rpc('respond_to_breakup', { accept_input: accept, couple_id_input: coupleId });
     if (error) throw error;
   },
 
@@ -227,8 +228,8 @@ export const db = {
       await supabase.from('memory_assets').insert(assetRows);
     }
 
-    // Add achievement checks
-    await db.checkAndUnlockAchievements(coupleId);
+    // Add achievement checks (non-blocking)
+    db.checkAndUnlockAchievements(coupleId).catch(console.error);
 
     return memory;
   },
@@ -267,10 +268,10 @@ export const db = {
       .single();
     if (error || !data) throw error || new Error('Failed to update sandbox card.');
 
-    // If moved to core memory, create a memory star automatically
+    // If moved to core memory, create a memory star automatically (non-blocking)
     if (status === 'core_memories') {
       const paths = data.metadata.photoUrl ? [{ path: data.metadata.photoUrl, type: 'image' as const }] : [];
-      await db.addMemory(
+      db.addMemory(
         data.couple_id, 
         'system', 
         data.title, 
@@ -278,7 +279,7 @@ export const db = {
         (data.category as Memory['category']) || 'Personal', 
         data.metadata.date || new Date().toISOString().split('T')[0],
         paths
-      );
+      ).catch(console.error);
     }
 
     return data;
@@ -293,7 +294,8 @@ export const db = {
     const { data, error } = await supabase
       .from('wants')
       .select('*')
-      .eq('couple_id', coupleId);
+      .eq('couple_id', coupleId)
+      .order('created_at', { ascending: false });
     if (error) return [];
     return data || [];
   },
@@ -324,6 +326,14 @@ export const db = {
   },
 
   saveDrawing: async (coupleId: string, userId: string, name: string, canvasData: unknown, thumbnailUrl?: string, isPinned = false): Promise<Drawing> => {
+    // First, un-pin any existing pinned drawing for this couple
+    if (isPinned) {
+      await supabase
+        .from('drawings')
+        .update({ is_pinned: false })
+        .eq('couple_id', coupleId)
+        .eq('is_pinned', true);
+    }
     const { data, error } = await supabase
       .from('drawings')
       .insert({ couple_id: coupleId, name, canvas_data: canvasData, thumbnail_url: thumbnailUrl, is_pinned: isPinned, created_by: userId })
@@ -357,7 +367,7 @@ export const db = {
       .select()
       .single();
     if (error) throw error;
-    await db.checkAndUnlockAchievements(coupleId);
+    db.checkAndUnlockAchievements(coupleId).catch(console.error);
     return data;
   },
 
@@ -512,7 +522,9 @@ export const db = {
       .select('*')
       .eq('couple_id', coupleId)
       .eq('recipient_id', userId)
-      .order('created_at', { ascending: false });
+      .eq('is_read', false)
+      .order('created_at', { ascending: false })
+      .limit(20);
     return data || [];
   },
 
@@ -542,14 +554,13 @@ export const db = {
     const movies = await db.getMovies(coupleId);
 
     const checkAndInsert = async (name: string, desc: string, criteria: string) => {
-      let alreadyUnlocked = false;
       const { data } = await supabase
         .from('achievements')
         .select('id')
         .eq('couple_id', coupleId)
         .eq('name', name)
         .maybeSingle();
-      alreadyUnlocked = !!data;
+      const alreadyUnlocked = !!data;
 
       if (!alreadyUnlocked) {
         const achRow = {
@@ -559,27 +570,15 @@ export const db = {
           criteria_type: criteria,
           unlocked_at: new Date().toISOString()
         };
-
         const { data: inserted } = await supabase.from('achievements').insert(achRow).select().single();
         if (inserted) unlocked.push(inserted);
       }
     };
 
-    // First Date Memory
-    if (memories.length > 0) {
-      await checkAndInsert('First Memory', 'Recorded your very first memory star together.', 'memory');
-    }
-    // 5 Memories
-    if (memories.length >= 5) {
-      await checkAndInsert('Nebula Builders', 'Created 5 memory stars together.', 'memory');
-    }
-    // Popcorn Lover
-    if (movies.length >= 1) {
-      await checkAndInsert('Movie Night', 'Logged your first popcorn movie rating.', 'movie');
-    }
-    if (movies.length >= 5) {
-      await checkAndInsert('Cinephiles', 'Watched and rated 5 movies or series together.', 'movie');
-    }
+    if (memories.length > 0) await checkAndInsert('First Memory', 'Recorded your very first memory star together.', 'memory');
+    if (memories.length >= 5) await checkAndInsert('Nebula Builders', 'Created 5 memory stars together.', 'memory');
+    if (movies.length >= 1) await checkAndInsert('Movie Night', 'Logged your first popcorn movie rating.', 'movie');
+    if (movies.length >= 5) await checkAndInsert('Cinephiles', 'Watched and rated 5 movies or series together.', 'movie');
 
     return unlocked;
   }
