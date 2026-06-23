@@ -8,14 +8,14 @@ import {
   Sparkles, Bell, Trophy, BookOpen,
   Film, Zap, Star, RefreshCw, User,
   Activity, Music, Send, Wifi, WifiOff,
-  ChevronRight, Gift
+  ChevronRight, Gift, Gamepad2
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import Navbar from '@/components/ui/Navbar';
-import { Memory, Drawing, Movie, AppNotification, Achievement } from '@/types';
+import { Memory, Drawing, Movie, AppNotification, Achievement, GameScore } from '@/types';
 
 // ── Mood Options ──────────────────────────────────────────────
 const MOOD_OPTIONS = [
@@ -108,6 +108,7 @@ export default function DashboardPage() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [gameScores, setGameScores] = useState<GameScore[]>([]);
 
   // Slot machine
   const [slotSpinning, setSlotSpinning] = useState(false);
@@ -206,18 +207,20 @@ export default function DashboardPage() {
   const loadDashboardData = useCallback(async () => {
     if (!profile?.couple_id) return;
     try {
-      const [mems, drws, movs, achs, notifs] = await Promise.all([
+      const [mems, drws, movs, achs, notifs, gScores] = await Promise.all([
         db.getMemories(profile.couple_id),
         db.getDrawings(profile.couple_id),
         db.getMovies(profile.couple_id),
         db.getAchievements(profile.couple_id),
         db.getNotifications(profile.couple_id, profile.id),
+        db.getGameScores(profile.couple_id),
       ]);
       setMemories(mems);
       setDrawings(drws);
       setMovies(movs);
       setAchievements(achs);
       setNotifications(notifs);
+      setGameScores(gScores);
 
       // Compute health score
       const score = Math.min(100, 
@@ -640,6 +643,7 @@ export default function DashboardPage() {
         <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard href="/galaxy" icon={Compass} count={memories.length} label="Memory Stars" color="#7c3aed" delay={0.1} />
           <StatCard href="/canvas" icon={Edit3} count={drawings.length} label="Artworks" color="#d946ef" delay={0.15} />
+          <StatCard href="/games" icon={Gamepad2} count={gameScores.length} label="Games Played" color="#22c55e" delay={0.18} />
           <StatCard href="/journal" icon={Film} count={movies.length} label="Movies Logged" color="#06b6d4" delay={0.2} />
           <StatCard icon={Trophy} count={achievements.length} label="Achievements" color="#f59e0b" delay={0.25} />
         </section>
@@ -853,6 +857,7 @@ export default function DashboardPage() {
             {[
               { href: '/galaxy', emoji: '🌌', label: 'Memory Galaxy', color: 'text-brand-violet', desc: 'Star your memories' },
               { href: '/canvas', emoji: '✏️', label: 'Live Canvas', color: 'text-brand-fuchsia', desc: 'Draw together' },
+              { href: '/games', emoji: '🎮', label: 'Mini Games', color: 'text-emerald-400', desc: 'Compete for scores' },
               { href: '/journal', emoji: '📖', label: 'Diary & Tracker', color: 'text-brand-cyan', desc: 'Log movies & places' },
               { href: '/settings', emoji: '⚙️', label: 'Settings', color: 'text-slate-300', desc: 'Wants & anniversary' },
             ].map(item => (

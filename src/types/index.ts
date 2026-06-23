@@ -246,3 +246,12 @@ export interface SafeSpace {
   created_at: string;
   updated_at: string;
 }
+
+export interface GameScore {
+  id: string;
+  couple_id: string;
+  user_id: string;
+  game_name: string;
+  score: number;
+  created_at: string;
+}

@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient';
 import { 
   Profile, Couple, BreakupRequest, Memory, SandboxCard, Drawing, MoodLog, Want, Movie, Game, LocationLog, 
   JournalEntry, VoiceCapsule, LoveLetter, TimeCapsule, AppNotification, 
-  Achievement
+  Achievement, GameScore
 } from '../types';
 
 export const db = {
@@ -580,7 +580,49 @@ export const db = {
     if (movies.length >= 1) await checkAndInsert('Movie Night', 'Logged your first popcorn movie rating.', 'movie');
     if (movies.length >= 5) await checkAndInsert('Cinephiles', 'Watched and rated 5 movies or series together.', 'movie');
 
+    // Game achievements
+    const gameScores = await db.getGameScores(coupleId);
+    if (gameScores.length >= 1) await checkAndInsert('Player One', 'Played your very first mini-game together!', 'game');
+    if (gameScores.length >= 10) await checkAndInsert('Game Masters', 'Played 10 mini-games together. Unstoppable duo!', 'game');
+    if (gameScores.length >= 25) await checkAndInsert('Arcade Legends', '25 games played! You two are on fire! 🔥', 'game');
+
     return unlocked;
+  },
+
+  // --- Mini-Games Score System ---
+  saveGameScore: async (coupleId: string, userId: string, gameName: string, score: number): Promise<GameScore> => {
+    const { data, error } = await supabase
+      .from('game_scores')
+      .insert({ couple_id: coupleId, user_id: userId, game_name: gameName, score })
+      .select()
+      .single();
+    if (error) throw error;
+    // Non-blocking achievement check
+    db.checkAndUnlockAchievements(coupleId).catch(console.error);
+    return data;
+  },
+
+  getGameScores: async (coupleId: string): Promise<GameScore[]> => {
+    const { data, error } = await supabase
+      .from('game_scores')
+      .select('*')
+      .eq('couple_id', coupleId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) return [];
+    return data || [];
+  },
+
+  getHighScores: async (coupleId: string, gameName: string): Promise<GameScore[]> => {
+    const { data, error } = await supabase
+      .from('game_scores')
+      .select('*')
+      .eq('couple_id', coupleId)
+      .eq('game_name', gameName)
+      .order('score', { ascending: false })
+      .limit(10);
+    if (error) return [];
+    return data || [];
   }
 };
 

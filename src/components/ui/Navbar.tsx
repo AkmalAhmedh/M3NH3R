@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   Home, Compass, Grid, Edit3, BookOpen, Settings,
-  ShieldCheck
+  ShieldCheck, Gamepad2
 } from 'lucide-react';
 
 const menuItems = [
@@ -14,6 +14,7 @@ const menuItems = [
   { name: 'Galaxy', path: '/galaxy', icon: Compass, color: '#7c3aed' },
   { name: 'Sandbox', path: '/sandbox', icon: Grid, color: '#06b6d4' },
   { name: 'Canvas', path: '/canvas', icon: Edit3, color: '#d946ef' },
+  { name: 'Games', path: '/games', icon: Gamepad2, color: '#22c55e' },
   { name: 'Diary', path: '/journal', icon: BookOpen, color: '#06b6d4' },
   { name: 'Vault', path: '/safe-space', icon: ShieldCheck, color: '#f59e0b' },
   { name: 'Settings', path: '/settings', icon: Settings, color: '#94a3b8' },
