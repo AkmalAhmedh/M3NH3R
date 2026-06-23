@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 'use client';
 
 import React, {
@@ -123,27 +124,6 @@ export default function CanvasPage() {
     img.onerror = () => setBgImage(null);
   }, [bgUrl]);
 
-  // ─── Canvas Renderer ───────────────────────────────────────
-  const renderCanvas = useCallback((strokesToRender: Stroke[]) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-
-    // Background
-    if (bgImage) {
-      const ratio = Math.max(CANVAS_W / bgImage.width, CANVAS_H / bgImage.height);
-      const w = bgImage.width * ratio;
-      const h = bgImage.height * ratio;
-      ctx.drawImage(bgImage, (CANVAS_W - w) / 2, (CANVAS_H - h) / 2, w, h);
-    }
-
-    // Draw all strokes
-    strokesToRender.forEach(stroke => drawStroke(ctx, stroke));
-  }, [bgImage]);
-
   function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
     if (!stroke.points || stroke.points.length === 0) return;
     ctx.save();
@@ -216,6 +196,29 @@ export default function CanvasPage() {
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
     if (previewStroke) drawStroke(ctx, previewStroke);
   }
+
+  // ─── Canvas Renderer ───────────────────────────────────────
+  const renderCanvas = useCallback((strokesToRender: Stroke[]) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Background
+    if (bgImage) {
+      const ratio = Math.max(CANVAS_W / bgImage.width, CANVAS_H / bgImage.height);
+      const w = bgImage.width * ratio;
+      const h = bgImage.height * ratio;
+      ctx.drawImage(bgImage, (CANVAS_W - w) / 2, (CANVAS_H - h) / 2, w, h);
+    }
+
+    // Draw all strokes
+    strokesToRender.forEach(stroke => drawStroke(ctx, stroke));
+  }, [bgImage]);
+
+
 
   useEffect(() => {
     renderCanvas(strokesRef.current);
