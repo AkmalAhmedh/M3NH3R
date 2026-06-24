@@ -912,7 +912,7 @@ export default function GamesPage() {
                   style={{ backgroundImage: `linear-gradient(to right, ${activeGameDef?.color || '#fff'}, transparent)` }} />
 
                 {/* Score comparison bar */}
-                <div className="flex justify-between items-center mb-5 text-xs">
+                <div className="flex flex-wrap justify-between items-center gap-2 mb-5 text-xs">
                   <div className="flex items-center gap-2 glass px-3 py-1.5 rounded-lg border border-white/5">
                     <Crown className="w-3 h-3 text-brand-gold" />
                     <span className="text-slate-400">Your best:</span>

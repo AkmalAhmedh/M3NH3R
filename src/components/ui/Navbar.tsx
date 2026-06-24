@@ -31,7 +31,7 @@ export default function Navbar() {
         {/* Outer glow */}
         <div className="absolute inset-0 rounded-full bg-brand-violet/10 blur-xl pointer-events-none" />
 
-        <div className="relative glass-intense rounded-full px-4 py-3 flex items-center justify-around border border-white/10 shadow-2xl shadow-black/50">
+        <div className="relative glass-intense rounded-full px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between sm:justify-around overflow-x-auto scrollbar-none gap-2 sm:gap-0 border border-white/10 shadow-2xl shadow-black/50">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.path;
