@@ -13,6 +13,7 @@ export const metadata: Metadata = {
     title: "M3NH3R",
   },
   applicationName: "M3NH3R",
+  manifest: "/manifest.json",
 };
 
 export const viewport: Viewport = {
