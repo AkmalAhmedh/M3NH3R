@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useRef, useMemo, useState } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars, PerspectiveCamera } from '@react-three/drei';
+import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
+import { OrbitControls, Stars, PerspectiveCamera, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { Memory } from '../../types';
 
@@ -10,6 +10,29 @@ interface MemoryStar {
   memory: Memory;
   position: [number, number, number];
 }
+
+// Category → color mapping for stars
+const CATEGORY_COLORS: Record<string, string> = {
+  Date: '#ec4899',     // Pink
+  Travel: '#06b6d4',   // Cyan
+  Movie: '#8b5cf6',    // Violet
+  Game: '#22c55e',     // Green
+  Food: '#f59e0b',     // Amber
+  Call: '#3b82f6',     // Blue
+  Gift: '#f43f5e',     // Rose
+  Personal: '#d946ef', // Fuchsia
+};
+
+const CATEGORY_HOVER_COLORS: Record<string, string> = {
+  Date: '#f9a8d4',
+  Travel: '#67e8f9',
+  Movie: '#c4b5fd',
+  Game: '#86efac',
+  Food: '#fcd34d',
+  Call: '#93c5fd',
+  Gift: '#fda4af',
+  Personal: '#f0abfc',
+};
 
 interface GalaxySceneProps {
   memories: Memory[];
@@ -71,7 +94,7 @@ const GalaxyScene: React.FC<GalaxySceneProps> = ({ memories, onSelectStar }) => 
     return [pos, cols];
   }, [branches, spin, radius, randomness, power]);
 
-  // Map relationship memories to golden interactive stars
+  // Map relationship memories to interactive stars
   const memoryStars = useMemo<MemoryStar[]>(() => {
     return memories.map((m, idx) => {
       // Position memory stars along a golden spiral inside the galaxy
@@ -146,6 +169,9 @@ interface InteractiveStarProps {
 const InteractiveStar: React.FC<InteractiveStarProps> = ({ memoryStar, onSelect, camera }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
+  
+  const starColor = CATEGORY_COLORS[memoryStar.memory.category] || '#f59e0b';
+  const hoverColor = CATEGORY_HOVER_COLORS[memoryStar.memory.category] || '#fbbf24';
 
   useFrame((state) => {
     if (meshRef.current) {
@@ -160,8 +186,7 @@ const InteractiveStar: React.FC<InteractiveStarProps> = ({ memoryStar, onSelect,
     }
   });
 
-  // Handle clicking a star - animate camera position towards it and trigger callback
-  const handleClick = (e: { stopPropagation: () => void }) => {
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onSelect(memoryStar.memory);
   };
@@ -176,19 +201,28 @@ const InteractiveStar: React.FC<InteractiveStarProps> = ({ memoryStar, onSelect,
     >
       <sphereGeometry args={[0.22, 16, 16]} />
       <meshBasicMaterial
-        color={hovered ? '#fbbf24' : '#f59e0b'} // Gold glow on hover
+        color={hovered ? hoverColor : starColor}
         toneMapped={false}
       />
       {/* Halo effect */}
       <mesh scale={[1.8, 1.8, 1.8]}>
         <sphereGeometry args={[0.22, 8, 8]} />
         <meshBasicMaterial
-          color="#f59e0b"
+          color={starColor}
           transparent
           opacity={hovered ? 0.35 : 0.15}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
+      {/* Tooltip on hover */}
+      {hovered && (
+        <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
+          <div className="glass-intense px-3 py-1.5 rounded-lg border border-white/20 text-center whitespace-nowrap" style={{ minWidth: '80px' }}>
+            <p className="text-[10px] font-bold text-white">{memoryStar.memory.title}</p>
+            <p className="text-[8px] text-slate-400">{memoryStar.memory.category} • {memoryStar.memory.date}</p>
+          </div>
+        </Html>
+      )}
     </mesh>
   );
 };

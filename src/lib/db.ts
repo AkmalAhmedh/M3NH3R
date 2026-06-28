@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 import { 
-  Profile, Couple, BreakupRequest, Memory, SandboxCard, Drawing, MoodLog, Want, Movie, Game, LocationLog, 
+  Profile, Couple, Memory, SandboxCard, Drawing, MoodLog, Want, Movie, Game, LocationLog, 
   JournalEntry, VoiceCapsule, LoveLetter, TimeCapsule, AppNotification, 
   Achievement, GameScore
 } from '../types';
@@ -232,6 +232,13 @@ export const db = {
     db.checkAndUnlockAchievements(coupleId).catch(console.error);
 
     return memory;
+  },
+
+  deleteMemory: async (memoryId: string): Promise<void> => {
+    // Delete associated assets first
+    await supabase.from('memory_assets').delete().eq('memory_id', memoryId);
+    const { error } = await supabase.from('memories').delete().eq('id', memoryId);
+    if (error) throw error;
   },
 
   // --- Sandbox & Wishlist ---
@@ -623,6 +630,29 @@ export const db = {
       .limit(10);
     if (error) return [];
     return data || [];
+  },
+
+  // --- Recent Activity Feed ---
+  getRecentActivity: async (coupleId: string): Promise<{ type: string; title: string; emoji: string; created_at: string }[]> => {
+    const since = new Date();
+    since.setDate(since.getDate() - 7);
+    const sinceStr = since.toISOString();
+
+    const [memories, drawings, scores, journals] = await Promise.all([
+      supabase.from('memories').select('title, created_at').eq('couple_id', coupleId).gte('created_at', sinceStr).order('created_at', { ascending: false }).limit(10),
+      supabase.from('drawings').select('name, created_at').eq('couple_id', coupleId).gte('created_at', sinceStr).order('created_at', { ascending: false }).limit(10),
+      supabase.from('game_scores').select('game_name, score, created_at').eq('couple_id', coupleId).gte('created_at', sinceStr).order('created_at', { ascending: false }).limit(10),
+      supabase.from('journals').select('title, created_at').eq('couple_id', coupleId).gte('created_at', sinceStr).order('created_at', { ascending: false }).limit(10),
+    ]);
+
+    const items: { type: string; title: string; emoji: string; created_at: string }[] = [];
+    (memories.data || []).forEach(m => items.push({ type: 'memory', title: m.title, emoji: '⭐', created_at: m.created_at }));
+    (drawings.data || []).forEach(d => items.push({ type: 'drawing', title: d.name || 'Untitled', emoji: '🎨', created_at: d.created_at }));
+    (scores.data || []).forEach(s => items.push({ type: 'game', title: `${s.game_name} — ${s.score} pts`, emoji: '🎮', created_at: s.created_at }));
+    (journals.data || []).forEach(j => items.push({ type: 'journal', title: j.title, emoji: '📖', created_at: j.created_at }));
+
+    items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return items.slice(0, 15);
   }
 };
 

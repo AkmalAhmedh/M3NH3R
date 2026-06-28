@@ -5,12 +5,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Gamepad2, Trophy, Star, Heart, Zap, Timer,
+  Gamepad2, Trophy, Star, Heart, Timer,
   ArrowLeft, Crown, RotateCcw, Sparkles, Type,
-  MousePointerClick, Grid3X3
+  MousePointerClick, Grid3X3, Users, Target
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
+import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/ui/Navbar';
 import { GameScore } from '@/types';
 
@@ -24,6 +25,7 @@ const GAMES = [
     color: '#ec4899',
     gradient: 'from-pink-500 to-rose-500',
     icon: Grid3X3,
+    multiplayer: false,
   },
   {
     id: 'love-trivia',
@@ -33,6 +35,7 @@ const GAMES = [
     color: '#8b5cf6',
     gradient: 'from-violet-500 to-purple-600',
     icon: Star,
+    multiplayer: false,
   },
   {
     id: 'word-chain',
@@ -42,6 +45,7 @@ const GAMES = [
     color: '#06b6d4',
     gradient: 'from-cyan-500 to-teal-500',
     icon: Type,
+    multiplayer: false,
   },
   {
     id: 'tap-dash',
@@ -51,6 +55,27 @@ const GAMES = [
     color: '#f59e0b',
     gradient: 'from-amber-500 to-orange-500',
     icon: MousePointerClick,
+    multiplayer: false,
+  },
+  {
+    id: 'tic-tac-love',
+    name: 'Tic Tac Love',
+    emoji: '🎯',
+    desc: '2-Player realtime tic-tac-toe!',
+    color: '#f43f5e',
+    gradient: 'from-rose-500 to-pink-600',
+    icon: Users,
+    multiplayer: true,
+  },
+  {
+    id: 'reaction-race',
+    name: 'Reaction Race',
+    emoji: '⏱️',
+    desc: 'Who reacts faster? Race your partner!',
+    color: '#14b8a6',
+    gradient: 'from-teal-500 to-emerald-500',
+    icon: Target,
+    multiplayer: true,
   },
 ] as const;
 
@@ -711,6 +736,375 @@ function TapDashGame({ onScore }: { onScore: (score: number) => void }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// TIC TAC LOVE (2-Player Realtime)
+// ═══════════════════════════════════════════════════════════════
+function TicTacLoveGame({ onScore }: { onScore: (score: number) => void }) {
+  const { profile, partnerProfile } = useApp();
+  const [board, setBoard] = useState<(string | null)[]>(Array(9).fill(null));
+  const [isMyTurn, setIsMyTurn] = useState(false);
+  const [winner, setWinner] = useState<string | null>(null);
+  const [gameActive, setGameActive] = useState(false);
+  const [waitingPartner, setWaitingPartner] = useState(false);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const mySymbol = useRef<'X' | 'O'>('X');
+
+  const WINNING_COMBOS = [
+    [0,1,2],[3,4,5],[6,7,8],
+    [0,3,6],[1,4,7],[2,5,8],
+    [0,4,8],[2,4,6]
+  ];
+
+  const checkWinner = (b: (string | null)[]) => {
+    for (const [a,c,d] of WINNING_COMBOS) {
+      if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a];
+    }
+    if (b.every(cell => cell !== null)) return 'draw';
+    return null;
+  };
+
+  const startGame = () => {
+    if (!profile?.couple_id) return;
+    const newBoard = Array(9).fill(null);
+    setBoard(newBoard);
+    setWinner(null);
+    setGameActive(true);
+    setWaitingPartner(true);
+    // Player who starts is "X"
+    mySymbol.current = 'X';
+    setIsMyTurn(true);
+
+    // Clean up old channel
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
+
+    const ch = supabase.channel(`tictac-${profile.couple_id}`);
+    channelRef.current = ch;
+
+    ch.on('broadcast', { event: 'ttt-move' }, ({ payload }) => {
+      if (payload.playerId !== profile.id) {
+        setBoard(payload.board);
+        const w = checkWinner(payload.board);
+        if (w) {
+          setWinner(w);
+          setGameActive(false);
+          if (w === 'draw') onScore(25);
+          else if (w !== mySymbol.current) { /* partner won, no points */ }
+        } else {
+          setIsMyTurn(true);
+        }
+      }
+    });
+
+    ch.on('broadcast', { event: 'ttt-join' }, ({ payload }) => {
+      if (payload.playerId !== profile.id) {
+        setWaitingPartner(false);
+      }
+    });
+
+    ch.on('broadcast', { event: 'ttt-start' }, ({ payload }) => {
+      if (payload.playerId !== profile.id) {
+        setBoard(Array(9).fill(null));
+        setWinner(null);
+        setGameActive(true);
+        mySymbol.current = 'O';
+        setIsMyTurn(false);
+        setWaitingPartner(false);
+      }
+    });
+
+    ch.subscribe(() => {
+      ch.send({ type: 'broadcast', event: 'ttt-start', payload: { playerId: profile.id } });
+    });
+  };
+
+  const handleMove = (idx: number) => {
+    if (!isMyTurn || board[idx] || winner || !gameActive) return;
+    const newBoard = [...board];
+    newBoard[idx] = mySymbol.current;
+    setBoard(newBoard);
+    setIsMyTurn(false);
+
+    const w = checkWinner(newBoard);
+    if (w) {
+      setWinner(w);
+      setGameActive(false);
+      if (w === mySymbol.current) onScore(100);
+      else if (w === 'draw') onScore(25);
+    }
+
+    channelRef.current?.send({
+      type: 'broadcast', event: 'ttt-move',
+      payload: { board: newBoard, playerId: profile?.id }
+    });
+  };
+
+  useEffect(() => {
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+  }, []);
+
+  const getCellDisplay = (val: string | null) => {
+    if (val === 'X') return '❌';
+    if (val === 'O') return '💖';
+    return '';
+  };
+
+  return (
+    <div className="space-y-4">
+      {!gameActive && !winner ? (
+        <div className="text-center py-8">
+          <div className="text-5xl mb-4">🎯</div>
+          <p className="text-sm text-slate-300 mb-2">Play Tic-Tac-Toe with your partner in real-time!</p>
+          <p className="text-[10px] text-slate-500 mb-4">Both of you need to be on this page. Winner gets 100 pts, draw gives 25 pts each.</p>
+          <button onClick={startGame} className="px-6 py-3 bg-gradient-to-r from-rose-500 to-pink-600 text-white font-bold text-sm rounded-xl cursor-pointer hover:opacity-90 transition">
+            Start Game
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex justify-between items-center text-xs">
+            <span className={`font-bold ${isMyTurn ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {waitingPartner ? '⏳ Waiting for partner...' : isMyTurn ? '✨ Your turn!' : `💭 ${partnerProfile?.username || 'Partner'}'s turn...`}
+            </span>
+            <span className="text-slate-400">You: {mySymbol.current === 'X' ? '❌' : '💖'}</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto">
+            {board.map((cell, idx) => (
+              <motion.button
+                key={idx}
+                onClick={() => handleMove(idx)}
+                whileTap={{ scale: 0.9 }}
+                className={`aspect-square rounded-xl text-3xl flex items-center justify-center cursor-pointer transition-all border
+                  ${cell ? 'bg-white/5 border-white/10' : 'bg-white/3 border-white/5 hover:bg-white/10 hover:border-white/20'}
+                  ${!isMyTurn || cell ? 'cursor-not-allowed' : ''}`}
+              >
+                <AnimatePresence mode="wait">
+                  {cell && (
+                    <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 500 }}>
+                      {getCellDisplay(cell)}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </motion.button>
+            ))}
+          </div>
+
+          {winner && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              className="text-center glass p-5 rounded-2xl border border-rose-500/20">
+              <div className="text-4xl mb-2">{winner === 'draw' ? '🤝' : winner === mySymbol.current ? '🏆' : '💔'}</div>
+              <p className="text-lg font-bold text-rose-400">
+                {winner === 'draw' ? 'It\'s a Draw!' : winner === mySymbol.current ? 'You Won!' : `${partnerProfile?.username || 'Partner'} Won!`}
+              </p>
+              <p className="text-2xl font-black text-white mt-1">
+                {winner === 'draw' ? '25' : winner === mySymbol.current ? '100' : '0'} pts
+              </p>
+              <button onClick={startGame} className="mt-3 px-4 py-2 bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-bold rounded-xl cursor-pointer hover:opacity-90 transition">
+                Play Again
+              </button>
+            </motion.div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REACTION RACE (2-Player Realtime)
+// ═══════════════════════════════════════════════════════════════
+function ReactionRaceGame({ onScore }: { onScore: (score: number) => void }) {
+  const { profile, partnerProfile } = useApp();
+  const [phase, setPhase] = useState<'idle' | 'waiting' | 'ready' | 'tapped' | 'result'>('idle');
+  const [myTime, setMyTime] = useState<number | null>(null);
+  const [partnerTime, setPartnerTime] = useState<number | null>(null);
+  const [round, setRound] = useState(0);
+  const [myTotal, setMyTotal] = useState(0);
+  const [partnerTotal, setPartnerTotal] = useState(0);
+  const readyAtRef = useRef(0);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const TOTAL_ROUNDS = 5;
+
+  const startRound = () => {
+    if (!profile?.couple_id) return;
+    setMyTime(null);
+    setPartnerTime(null);
+    setPhase('waiting');
+
+    if (!channelRef.current) {
+      const ch = supabase.channel(`reaction-${profile.couple_id}`);
+      channelRef.current = ch;
+
+      ch.on('broadcast', { event: 'reaction-tap' }, ({ payload }) => {
+        if (payload.playerId !== profile.id) {
+          setPartnerTime(payload.time);
+        }
+      });
+
+      ch.on('broadcast', { event: 'reaction-go' }, ({ payload }) => {
+        if (payload.playerId !== profile.id) {
+          // Partner started a round — sync to same go signal
+          readyAtRef.current = payload.readyAt;
+          const delay = Math.max(0, payload.readyAt - Date.now());
+          setTimeout(() => setPhase('ready'), delay);
+        }
+      });
+
+      ch.subscribe();
+    }
+
+    // Random delay 2-5 seconds
+    const delay = 2000 + Math.random() * 3000;
+    const readyAt = Date.now() + delay;
+    readyAtRef.current = readyAt;
+
+    channelRef.current?.send({
+      type: 'broadcast', event: 'reaction-go',
+      payload: { playerId: profile.id, readyAt }
+    });
+
+    setTimeout(() => {
+      setPhase('ready');
+    }, delay);
+  };
+
+  const handleTap = () => {
+    if (phase !== 'ready') return;
+    const reactionMs = Date.now() - readyAtRef.current;
+    setMyTime(reactionMs);
+    setPhase('tapped');
+
+    channelRef.current?.send({
+      type: 'broadcast', event: 'reaction-tap',
+      payload: { playerId: profile?.id, time: reactionMs }
+    });
+  };
+
+  // Check if both tapped
+  useEffect(() => {
+    if (myTime !== null && partnerTime !== null && phase === 'tapped') {
+      const newRound = round + 1;
+      const myNewTotal = myTotal + (myTime <= partnerTime ? 1 : 0);
+      const partnerNewTotal = partnerTotal + (partnerTime < myTime ? 1 : 0);
+      setMyTotal(myNewTotal);
+      setPartnerTotal(partnerNewTotal);
+      setRound(newRound);
+      setPhase('result');
+
+      if (newRound >= TOTAL_ROUNDS) {
+        const pts = myNewTotal > partnerNewTotal ? 100 : myNewTotal === partnerNewTotal ? 50 : 20;
+        onScore(pts);
+      }
+    }
+  }, [myTime, partnerTime]);
+
+  useEffect(() => {
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+  }, []);
+
+  const resetGame = () => {
+    setPhase('idle');
+    setRound(0);
+    setMyTotal(0);
+    setPartnerTotal(0);
+    setMyTime(null);
+    setPartnerTime(null);
+  };
+
+  const gameComplete = round >= TOTAL_ROUNDS;
+
+  return (
+    <div className="space-y-4">
+      {phase === 'idle' && !gameComplete ? (
+        <div className="text-center py-8">
+          <div className="text-5xl mb-4">⏱️</div>
+          <p className="text-sm text-slate-300 mb-2">Test your reaction speed against your partner!</p>
+          <p className="text-[10px] text-slate-500 mb-4">{TOTAL_ROUNDS} rounds. Wait for green, then tap as fast as you can! Both must be on this page.</p>
+          <button onClick={startRound} className="px-6 py-3 bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-bold text-sm rounded-xl cursor-pointer hover:opacity-90 transition">
+            Start Race
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-bold text-teal-400">Round {Math.min(round + 1, TOTAL_ROUNDS)}/{TOTAL_ROUNDS}</span>
+            <div className="flex gap-3">
+              <span className="text-slate-300">You: <strong className="text-white">{myTotal}</strong></span>
+              <span className="text-slate-300">{partnerProfile?.username || 'Partner'}: <strong className="text-white">{partnerTotal}</strong></span>
+            </div>
+          </div>
+
+          {!gameComplete ? (
+            <>
+              {phase === 'waiting' && (
+                <motion.div animate={{ backgroundColor: ['rgba(239,68,68,0.1)', 'rgba(239,68,68,0.2)', 'rgba(239,68,68,0.1)'] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                  className="rounded-2xl border border-rose-500/20 p-16 text-center">
+                  <p className="text-2xl font-black text-rose-400">WAIT...</p>
+                  <p className="text-[10px] text-slate-500 mt-2">Don&apos;t tap yet!</p>
+                </motion.div>
+              )}
+              {phase === 'ready' && (
+                <motion.button
+                  initial={{ scale: 0.9 }} animate={{ scale: 1 }}
+                  onClick={handleTap}
+                  className="w-full rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-16 text-center cursor-pointer hover:bg-emerald-500/20 transition">
+                  <p className="text-3xl font-black text-emerald-400">TAP NOW! 🟢</p>
+                </motion.button>
+              )}
+              {phase === 'tapped' && (
+                <div className="rounded-2xl border border-white/10 p-16 text-center">
+                  <p className="text-lg font-bold text-white">Your time: {myTime}ms</p>
+                  <p className="text-xs text-slate-400 mt-2 animate-pulse">
+                    {partnerTime === null ? `Waiting for ${partnerProfile?.username || 'partner'}...` : 'Both tapped!'}
+                  </p>
+                </div>
+              )}
+              {phase === 'result' && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="glass p-5 rounded-2xl border border-white/10 text-center space-y-3">
+                  <div className="flex justify-around">
+                    <div>
+                      <p className="text-[10px] text-slate-500">You</p>
+                      <p className={`text-lg font-black ${myTime! <= partnerTime! ? 'text-emerald-400' : 'text-slate-400'}`}>{myTime}ms</p>
+                    </div>
+                    <div className="text-2xl">⚡</div>
+                    <div>
+                      <p className="text-[10px] text-slate-500">{partnerProfile?.username || 'Partner'}</p>
+                      <p className={`text-lg font-black ${partnerTime! < myTime! ? 'text-emerald-400' : 'text-slate-400'}`}>{partnerTime}ms</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-bold">
+                    {myTime! <= partnerTime! ? '🎉 You were faster!' : `${partnerProfile?.username || 'Partner'} was faster!`}
+                  </p>
+                  <button onClick={startRound} className="px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer hover:opacity-90 transition">
+                    Next Round
+                  </button>
+                </motion.div>
+              )}
+            </>
+          ) : (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              className="text-center glass p-5 rounded-2xl border border-teal-500/20">
+              <div className="text-4xl mb-2">{myTotal > partnerTotal ? '🏆' : myTotal === partnerTotal ? '🤝' : '💪'}</div>
+              <p className="text-lg font-bold text-teal-400">
+                {myTotal > partnerTotal ? 'You Won the Race!' : myTotal === partnerTotal ? 'It\'s a Tie!' : `${partnerProfile?.username || 'Partner'} Won!`}
+              </p>
+              <p className="text-2xl font-black text-white mt-1">
+                {myTotal > partnerTotal ? '100' : myTotal === partnerTotal ? '50' : '20'} pts
+              </p>
+              <p className="text-[10px] text-slate-500 mt-1">Score: {myTotal} - {partnerTotal}</p>
+              <button onClick={resetGame} className="mt-3 px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer hover:opacity-90 transition">
+                Play Again
+              </button>
+            </motion.div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN GAMES PAGE
 // ═══════════════════════════════════════════════════════════════
 export default function GamesPage() {
@@ -734,6 +1128,23 @@ export default function GamesPage() {
   }, [profile?.couple_id]);
 
   useEffect(() => { loadScores(); }, [loadScores]);
+
+  // Realtime listener for partner's scores
+  useEffect(() => {
+    if (!profile?.couple_id) return;
+    const channel = supabase
+      .channel(`game-scores-realtime-${profile.couple_id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'game_scores',
+        filter: `couple_id=eq.${profile.couple_id}`
+      }, () => {
+        loadScores();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.couple_id, loadScores]);
 
   const handleScore = async (gameName: string, score: number) => {
     if (!profile?.couple_id || !profile?.id) return;
@@ -837,6 +1248,11 @@ export default function GamesPage() {
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="text-sm font-bold text-white">{game.name}</h3>
                             <Icon className="w-3.5 h-3.5 text-slate-500" />
+                            {game.multiplayer && (
+                              <span className="text-[8px] font-bold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full">
+                                2P Live
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-slate-400 mb-3">{game.desc}</p>
 
@@ -935,6 +1351,8 @@ export default function GamesPage() {
                 {activeGame === 'love-trivia' && <LoveTriviaGame onScore={(s) => handleScore('love-trivia', s)} />}
                 {activeGame === 'word-chain' && <WordChainGame onScore={(s) => handleScore('word-chain', s)} />}
                 {activeGame === 'tap-dash' && <TapDashGame onScore={(s) => handleScore('tap-dash', s)} />}
+                {activeGame === 'tic-tac-love' && <TicTacLoveGame onScore={(s) => handleScore('tic-tac-love', s)} />}
+                {activeGame === 'reaction-race' && <ReactionRaceGame onScore={(s) => handleScore('reaction-race', s)} />}
               </div>
 
               {/* Recent scores for this game */}

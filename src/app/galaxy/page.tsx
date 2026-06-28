@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Compass, Plus, X, Calendar } from 'lucide-react';
+import { Compass, Plus, X, Calendar, Trash2, Loader2 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { db } from '@/lib/db';
 import Galaxy from '@/components/universe/Galaxy';
@@ -12,11 +12,13 @@ import { motion as framerMotion, AnimatePresence } from 'framer-motion';
 
 export default function GalaxyPage() {
   const router = useRouter();
-  const { user, profile, loading, logOut } = useApp();
+  const { user, profile, loading } = useApp();
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   // Form states
   const [title, setTitle] = useState('');
@@ -38,8 +40,13 @@ export default function GalaxyPage() {
 
   const loadMemories = useCallback(async () => {
     if (!profile?.couple_id) return;
-    const mems = await db.getMemories(profile.couple_id);
-    setMemories(mems);
+    setDataLoading(true);
+    try {
+      const mems = await db.getMemories(profile.couple_id);
+      setMemories(mems);
+    } finally {
+      setDataLoading(false);
+    }
   }, [profile]);
 
   useEffect(() => {
@@ -58,14 +65,11 @@ export default function GalaxyPage() {
       const paths = imageUrl ? [{ path: imageUrl, type: 'image' as const }] : [];
       await db.addMemory(profile.couple_id, profile.id, title, content, category, date, paths);
       
-      // Reset form & close modal
       setTitle('');
       setContent('');
       setImageUrl('');
       setCategory('Date');
       setModalOpen(false);
-      
-      // Refresh memory list
       await loadMemories();
     } catch (err) {
       console.error('Failed to create memory star:', err);
@@ -74,15 +78,51 @@ export default function GalaxyPage() {
     }
   };
 
-  // We no longer block the entire page render. 
-  // If loading, we show a subtle indicator but render the layout.
+  const handleDeleteMemory = async () => {
+    if (!selectedMemory) return;
+    setDeleting(true);
+    try {
+      await db.deleteMemory(selectedMemory.id);
+      setSelectedMemory(null);
+      await loadMemories();
+    } catch (err) {
+      console.error('Failed to delete memory:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="w-screen h-screen relative overflow-hidden bg-slate-950 flex flex-col justify-between">
       
       {/* 3D Canvas Explorer */}
       <div className="absolute inset-0 z-0">
-        <Galaxy memories={memories} onSelectMemory={(mem) => setSelectedMemory(mem)} />
+        {dataLoading ? (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <Loader2 className="w-8 h-8 text-brand-cyan animate-spin mx-auto" />
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Loading your galaxy...</p>
+            </div>
+          </div>
+        ) : memories.length === 0 ? (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="text-center space-y-4 px-6 max-w-sm">
+              <div className="text-6xl mb-2">🌌</div>
+              <h2 className="text-lg font-bold text-slate-200">Your galaxy is empty</h2>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Every memory you create becomes a star in your shared galaxy. Start by adding your first memory — a date, a trip, a special moment — and watch your universe grow together.
+              </p>
+              <button
+                onClick={() => setModalOpen(true)}
+                className="mt-2 px-6 py-2.5 bg-gradient-to-r from-brand-violet to-brand-fuchsia text-white text-xs font-bold rounded-xl cursor-pointer hover:opacity-90 transition inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" /> Create First Star
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Galaxy memories={memories} onSelectMemory={(mem) => setSelectedMemory(mem)} />
+        )}
       </div>
 
       {/* Floating Header */}
@@ -103,7 +143,7 @@ export default function GalaxyPage() {
         <Plus className="w-4 h-4" /> Add Memory Star
       </button>
 
-      {/* Detail Overlay Drawer */}
+      {/* Detail Overlay Drawer — full width on mobile */}
       <AnimatePresence>
         {selectedMemory && (
           <framerMotion.div
@@ -111,19 +151,29 @@ export default function GalaxyPage() {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 400, opacity: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="absolute top-0 right-0 h-full w-full max-w-sm glass-intense border-l border-white/10 z-20 p-6 flex flex-col justify-between shadow-2xl overflow-y-auto"
+            className="absolute top-0 right-0 h-full w-full sm:max-w-sm glass-intense border-l border-white/10 z-20 p-6 flex flex-col justify-between shadow-2xl overflow-y-auto"
           >
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <span className="text-[10px] uppercase font-bold tracking-widest text-brand-fuchsia bg-brand-fuchsia/10 border border-brand-fuchsia/20 px-3 py-1 rounded-full">
                   {selectedMemory.category}
                 </span>
-                <button
-                  onClick={() => setSelectedMemory(null)}
-                  className="p-1.5 hover:bg-white/10 rounded-full transition text-slate-400 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDeleteMemory}
+                    disabled={deleting}
+                    className="p-1.5 hover:bg-rose-500/20 rounded-full transition text-slate-500 hover:text-rose-400 cursor-pointer disabled:opacity-50"
+                    title="Delete memory"
+                  >
+                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={() => setSelectedMemory(null)}
+                    className="p-1.5 hover:bg-white/10 rounded-full transition text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -255,7 +305,7 @@ export default function GalaxyPage() {
                   {formLoading ? (
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
-                    'Synthesize Star Star Star'
+                    'Create Memory Star ⭐'
                   )}
                 </button>
               </form>

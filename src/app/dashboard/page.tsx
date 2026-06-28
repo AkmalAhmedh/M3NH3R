@@ -45,6 +45,23 @@ const DATE_IDEAS = [
   { text: '🚗 Mystery Drive', desc: 'Drive with no destination, see where you end up.' },
 ];
 
+const LOVE_NOTES = [
+  { text: 'The best thing to hold onto in life is each other.', author: 'Audrey Hepburn' },
+  { text: 'In all the world, there is no heart for me like yours.', author: 'Maya Angelou' },
+  { text: 'You are my today and all of my tomorrows.', author: 'Leo Christopher' },
+  { text: 'I have found the one whom my soul loves.', author: 'Song of Solomon' },
+  { text: 'Whatever our souls are made of, yours and mine are the same.', author: 'Emily Brontë' },
+  { text: 'Love is not about how many days you have been together, it is about how much you love each other every day.', author: 'Unknown' },
+  { text: 'I love you not because of who you are, but because of who I am when I am with you.', author: 'Roy Croft' },
+  { text: 'You make me want to be a better person.', author: 'As Good as It Gets' },
+  { text: 'Every love story is beautiful, but ours is my favorite.', author: 'Unknown' },
+  { text: 'I saw that you were perfect, and so I loved you. Then I saw that you were not perfect and I loved you even more.', author: 'Angelita Lim' },
+  { text: 'To love and be loved is to feel the sun from both sides.', author: 'David Viscott' },
+  { text: 'I choose you. And I\'ll choose you over and over, without pause, without a doubt, in a heartbeat.', author: 'Unknown' },
+  { text: 'You are the finest, loveliest, tenderest, and most beautiful person I have ever known.', author: 'F. Scott Fitzgerald' },
+  { text: 'In case you ever foolishly forget: I am never not thinking of you.', author: 'Virginia Woolf' },
+];
+
 const VIBE_OPTIONS = [
   { label: 'Lo-fi Chill', emoji: '🎵', color: 'text-sky-400', url: 'https://www.youtube.com/watch?v=jfKfPfyJRdk' },
   { label: 'Romantic', emoji: '🎻', color: 'text-rose-400', url: 'https://www.youtube.com/watch?v=OFhDQVejMlI' },
@@ -135,6 +152,12 @@ export default function DashboardPage() {
 
   // Health score
   const [healthScore, setHealthScore] = useState(0);
+
+  // Activity feed
+  const [recentActivity, setRecentActivity] = useState<{ type: string; title: string; emoji: string; created_at: string }[]>([]);
+
+  // Couple streak
+  const [streak, setStreak] = useState(0);
 
   // Redirect guard
   useEffect(() => {
@@ -251,6 +274,43 @@ export default function DashboardPage() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile?.couple_id, loadDashboardData]);
+
+  // Realtime listener for game_scores
+  useEffect(() => {
+    if (!profile?.couple_id) return;
+    const channel = supabase
+      .channel(`dashboard-game-scores-${profile.couple_id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'game_scores',
+        filter: `couple_id=eq.${profile.couple_id}`
+      }, loadDashboardData)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.couple_id, loadDashboardData]);
+
+  // Load activity feed
+  useEffect(() => {
+    if (!profile?.couple_id) return;
+    db.getRecentActivity(profile.couple_id).then(setRecentActivity).catch(console.error);
+  }, [profile?.couple_id, memories, gameScores]);
+
+  // Calculate streak (consecutive days both active)
+  useEffect(() => {
+    if (!profile?.last_active_at || !partnerProfile?.last_active_at) { setStreak(0); return; }
+    const myDate = new Date(profile.last_active_at);
+    const partnerDate = new Date(partnerProfile.last_active_at);
+    const today = new Date();
+    const myDaysAgo = Math.floor((today.getTime() - myDate.getTime()) / (1000 * 60 * 60 * 24));
+    const partnerDaysAgo = Math.floor((today.getTime() - partnerDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Simple streak: both active today = streak continues
+    if (myDaysAgo <= 1 && partnerDaysAgo <= 1) {
+      setStreak(prev => Math.max(prev, getDaysTogether() > 0 ? Math.min(getDaysTogether(), 365) : 1));
+    } else {
+      setStreak(Math.max(0, 1 - Math.max(myDaysAgo, partnerDaysAgo)));
+    }
+  }, [profile?.last_active_at, partnerProfile?.last_active_at]);
 
   const getDaysTogether = () => {
     if (!couple?.anniversary_date) return 0;
@@ -483,7 +543,7 @@ export default function DashboardPage() {
                   <span className="text-[9px] uppercase text-slate-400 tracking-widest mt-0.5 block">Days to Anniv.</span>
                 </div>
               )}
-              {/* Send Hug */}
+            {/* Send Hug */}
               <motion.button
                 onClick={handleSendHug}
                 whileTap={{ scale: 0.9 }}
@@ -492,8 +552,41 @@ export default function DashboardPage() {
                 <span className="text-3xl">{hugSent ? '💌' : '🤗'}</span>
                 <span className="text-[9px] uppercase text-slate-400 tracking-widest">{hugSent ? 'Sent!' : 'Send Hug'}</span>
               </motion.button>
+              {/* Streak */}
+              {streak > 0 && (
+                <div className="glass p-4 rounded-xl text-center min-w-[90px] glow-border-gold">
+                  <span className="block text-3xl font-black text-brand-gold text-glow-gold font-mono">🔥{streak}</span>
+                  <span className="text-[9px] uppercase text-slate-400 tracking-widest mt-0.5 block">Day Streak</span>
+                </div>
+              )}
             </div>
           </div>
+        </motion.section>
+
+        {/* ── LOVE NOTE OF THE DAY ───────────────────────────── */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          {(() => {
+            // Seed by date so both partners see the same quote
+            const today = new Date();
+            const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+            const note = LOVE_NOTES[seed % LOVE_NOTES.length];
+            return (
+              <div className="relative glass-aurora overflow-hidden group">
+                <div className="relative z-10 p-5 flex items-center gap-4">
+                  <div className="text-4xl flex-shrink-0 animate-float-gentle">💝</div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-brand-fuchsia font-semibold mb-1">Love Note of the Day</p>
+                    <p className="text-sm text-slate-200 italic leading-relaxed">&ldquo;{note.text}&rdquo;</p>
+                    <p className="text-[10px] text-slate-500 mt-1">— {note.author}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </motion.section>
 
         {/* ── MOOD + PARTNER + SLOT MACHINE ─────────────────── */}
@@ -842,6 +935,40 @@ export default function DashboardPage() {
             </div>
           </motion.div>
         </section>
+
+        {/* ── WEEKLY ACTIVITY FEED ─────────────────────────────── */}
+        {recentActivity.length > 0 && (
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.38 }}
+            className="glass p-5 rounded-2xl border border-white/5"
+          >
+            <h2 className="text-sm font-semibold tracking-wide text-slate-200 flex items-center gap-2 mb-4">
+              <Star className="w-4 h-4 text-brand-violet icon-glow-violet" />
+              This Week&apos;s Activity
+              <span className="text-[9px] text-slate-500 ml-1">{recentActivity.length} events</span>
+            </h2>
+            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+              {recentActivity.map((item, idx) => (
+                <motion.div
+                  key={`${item.type}-${idx}`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                  className="flex items-center gap-3 p-2.5 bg-white/3 hover:bg-white/5 rounded-xl border border-white/5 transition"
+                >
+                  <span className="text-lg flex-shrink-0">{item.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-200 font-medium truncate">{item.title}</p>
+                    <p className="text-[9px] text-slate-500">{new Date(item.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                  </div>
+                  <span className="text-[8px] uppercase tracking-wider text-slate-600 bg-white/5 px-2 py-0.5 rounded-full flex-shrink-0">{item.type}</span>
+                </motion.div>
+              ))}
+            </div>
+          </motion.section>
+        )}
 
         {/* ── QUICK LINKS ROW ────────────────────────────────── */}
         <motion.section
